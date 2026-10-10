@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
 import { Pressable, Text } from 'react-native';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MediaAsset, MeshClient, MeshMessage, MeshState, Mode } from '@teamwater/core';
 import { PhoneChat } from './index';
 
-afterEach(cleanup);
+const platformMetrics = vi.hoisted(() => ({ fontScale: 1 }));
+vi.mock('react-native', async importOriginal => {
+  const actual = await importOriginal<typeof import('react-native')>();
+  return { ...actual, useWindowDimensions: () => ({ ...actual.useWindowDimensions(), fontScale: platformMetrics.fontScale }) };
+});
+
+afterEach(() => { cleanup(); platformMetrics.fontScale = 1; });
 
 function message(overrides: Partial<MeshMessage> = {}): MeshMessage {
   return { id: 'm1', src: 'node0', dst: 'node4', kind: 'text', preview: 'Fix the code', text: 'Fix the code', totalChunks: 4, received: 4, acked: 4, status: 'delivered', route: ['node0', 'node4'], createdAt: 1000, etaSeconds: null, integrity: 'unverified', receiptConfirmed: false, ...overrides };
@@ -24,6 +30,67 @@ class FakeClient implements MeshClient {
 }
 
 describe('PhoneChat', () => {
+  it('compacts optional identity chrome while keeping the conversation and composer available', () => {
+    const client = new FakeClient();
+    client.publish([message({ text: 'The newest message from Alex' }), message({ id: 'reply', src: 'node4', dst: 'node0', text: 'Jordan’s reply' })]);
+    render(<PhoneChat client={client} role="employee" compact/>);
+    expect(screen.queryByText('Burning Man · Black Rock City')).toBeNull();
+    expect(screen.queryByText('San Francisco, CA')).toBeNull();
+    expect(screen.queryByText('OFF THE GRID. STILL IN SYNC.')).toBeNull();
+    expect(screen.queryByText('STORE · FORWARD')).toBeNull();
+    expect(screen.getByText('Alex')).toBeTruthy();
+    expect(screen.getByText('The newest message from Alex')).toBeTruthy();
+    expect(screen.getByText('Jordan’s reply')).toBeTruthy();
+    expect(screen.getByLabelText('Message input')).toBeTruthy();
+    expect(screen.getByLabelText('Send message')).toBeTruthy();
+    expect(screen.getByLabelText('Attach image')).toBeTruthy();
+  });
+
+  it('reports composer focus so the native shell can make space for the keyboard', () => {
+    const events: boolean[] = [];
+    render(<PhoneChat client={new FakeClient()} role="employee" onComposerFocusChange={focused => events.push(focused)}/>);
+    fireEvent.focus(screen.getByLabelText('Message input'));
+    fireEvent.blur(screen.getByLabelText('Message input'));
+    expect(events).toEqual([true, false]);
+  });
+
+  it('preserves the input draft and active recorder while compact mode changes', () => {
+    function RecorderChoice() {
+      const [started, setStarted] = useState(false);
+      return <Pressable accessibilityRole="button" accessibilityLabel="Start test recorder" onPress={() => setStarted(true)}><Text>{started ? 'Recording choice active' : 'Recorder idle'}</Text></Pressable>;
+    }
+    const client = new FakeClient();
+    const recorder = () => <RecorderChoice/>;
+    const view = render(<PhoneChat client={client} role="employee" renderVoiceRecorder={recorder}/>);
+    fireEvent.change(screen.getByLabelText('Message input'), { target: { value: 'Do not lose this draft' } });
+    const input = screen.getByLabelText('Message input');
+    fireEvent.click(screen.getByLabelText('Start test recorder'));
+    view.rerender(<PhoneChat client={client} role="employee" compact renderVoiceRecorder={recorder}/>);
+    expect(screen.getByLabelText('Message input')).toBe(input);
+    expect((input as HTMLTextAreaElement).value).toBe('Do not lose this draft');
+    expect(screen.getByText('Recording choice active')).toBeTruthy();
+    view.rerender(<PhoneChat client={client} role="employee" renderVoiceRecorder={recorder}/>);
+    expect(screen.getByText('Recording choice active')).toBeTruthy();
+    expect(screen.getByText('Burning Man · Black Rock City')).toBeTruthy();
+  });
+
+  it('allows the composer to fit two lines at large native font scaling', () => {
+    platformMetrics.fontScale = 3;
+    render(<PhoneChat client={new FakeClient()} role="employee" compact/>);
+    const input = screen.getByLabelText('Message input');
+    const style = window.getComputedStyle(input);
+    expect(parseFloat(style.minHeight)).toBeGreaterThanOrEqual(136);
+    expect(parseFloat(style.maxHeight)).toBeGreaterThanOrEqual(parseFloat(style.minHeight));
+  });
+
+  it('retains the full desktop identity layout when compact mode is not requested', () => {
+    render(<PhoneChat client={new FakeClient()} role="employee" embedded/>);
+    fireEvent.focus(screen.getByLabelText('Message input'));
+    expect(screen.getByText('Burning Man · Black Rock City')).toBeTruthy();
+    expect(screen.getByText('San Francisco, CA')).toBeTruthy();
+    expect(screen.getByText('OFF THE GRID. STILL IN SYNC.')).toBeTruthy();
+  });
+
   it('shows both directions for the role and hides unrelated messages', () => {
     const client = new FakeClient();
     client.publish([message(), message({ id: 'reply', src: 'node4', dst: 'node0', text: 'I am at Burning Man', preview: 'I am at Burning Man' }), message({ id: 'other', src: 'node2', dst: 'node3', text: 'Private relay message', preview: 'Private relay message' })]);
