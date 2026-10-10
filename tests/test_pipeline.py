@@ -208,8 +208,9 @@ class MeshTests(unittest.IsolatedAsyncioTestCase):
                 return True
             return False
 
+        # Hop-level ARQ would absorb a single lost ACK; isolate end-to-end recovery.
         backend, mid, msg, data = await self.run_transfer(
-            loss_rate=0, drop_predicate=drop
+            loss_rate=0, drop_predicate=drop, link_retries=0
         )
         self.assertEqual(msg.status, "delivered")
         self.assertGreater(msg.retries, 0)
