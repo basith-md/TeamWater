@@ -3,6 +3,7 @@ import { Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, ChevronRight, Circle
 import { deliveryLabel, deriveTelemetry, useMesh } from '@teamwater/core';
 import type { MeshClient, MeshEvent, MeshMessage, MeshState } from '@teamwater/core';
 import { PhoneChat, PhoneIdentity } from '@teamwater/mobile-ui';
+import type { ModelPickerProps } from '@teamwater/mobile-ui';
 import { pickBrowserMedia } from './browserMedia';
 import { VerifiedAudio } from './VerifiedAudio';
 import { liveTransmission, useTracePlayback } from './useTracePlayback';
@@ -20,16 +21,28 @@ const playaNodeLabels: Record<string, string> = {
 };
 const camper = (id: string) => (playaNodeLabels[id] ?? id).split(' · ')[0];
 
-function PairPicker({ nodes, a, b, setA, setB, status }: { nodes: { id: string }[]; a: string; b: string; setA: (id: string) => void; setB: (id: string) => void; status: React.ReactNode }) {
+function PairPicker({ nodes, a, b, setA, setB, status, internet, setInternet }: { nodes: { id: string }[]; a: string; b: string; setA: (id: string) => void; setB: (id: string) => void; status: React.ReactNode; internet?: string | null; setInternet?: (id: string | null) => void }) {
   const options = (other: string) => nodes.map(n => <option key={n.id} value={n.id} disabled={n.id === other}>{camper(n.id)}</option>);
   return <div className="pair-bar" role="group" aria-label="Choose phones">
     <div className="pair-selects">
       <select aria-label="Left phone node" value={a} onChange={e => setA(e.target.value)}>{options(b)}</select>
       <ArrowRight size={16} aria-hidden="true"/>
       <select aria-label="Right phone node" value={b} onChange={e => setB(e.target.value)}>{options(a)}</select>
+      {setInternet && <label className="internet-picker"><span>Internet</span><select aria-label="Internet node" value={internet ?? ''} onChange={e => setInternet(e.target.value || null)}>
+        <option value="">None · offline</option>
+        {nodes.map(n => <option key={n.id} value={n.id}>{camper(n.id)}</option>)}
+      </select></label>}
     </div>
     {status}
   </div>;
+}
+
+function ModelSelect({ models, value, onChange, disabled }: ModelPickerProps) {
+  return <label className="model-select"><span>Model</span><select aria-label="AI model" value={value} disabled={disabled} onChange={e => onChange(Number(e.target.value))}>
+    {(['ok', 'unknown', 'avoid'] as const).map(level => <optgroup key={level} label={level === 'ok' ? 'Not trained on' : level === 'unknown' ? 'Privacy policy unknown' : 'Trained on / retained'}>
+      {models.filter(m => m.privacyLevel === level).map(m => <option key={m.index} value={m.index}>{m.label} · {m.provider} · {m.tier}</option>)}
+    </optgroup>)}
+  </select></label>;
 }
 
 function traceTime(at: number, createdAt: number | null | undefined, replay: boolean) {
@@ -62,6 +75,7 @@ function TracePacket({ event, from, to, duration = 0.6, live = false }: { live?:
 
 export function Topology({ state, message, events, onMove }: { state: MeshState; message?: MeshMessage; events: MeshEvent[]; onMove?: (nodeId: string, x: number, y: number) => void }) {
   const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null);
+  const internetNode = state.ai?.internetNode ?? null;
   const svgRef = useRef<SVGSVGElement>(null);
   const xs = state.nodes.map(node => node.x), ys = state.nodes.map(node => node.y);
   const minX = Math.min(...xs), minY = Math.min(...ys);
@@ -105,13 +119,15 @@ export function Topology({ state, message, events, onMove }: { state: MeshState;
         const point = positions.get(node.id)!;
         const endpoint = node.id === 'node0' || node.id === 'node4';
         const label = playaNodeLabels[node.id] ?? `${node.name} · Relay`;
-        return <g key={node.id} transform={`translate(${point.x},${point.y})`} className={node.online ? 'map-node' : 'map-node offline'}
+        const internet = node.id === internetNode;
+        return <g key={node.id} transform={`translate(${point.x},${point.y})`} className={`map-node${node.online ? '' : ' offline'}${internet ? ' internet' : ''}`}
           style={onMove ? { cursor: 'grab', touchAction: 'none' } : undefined}
           onPointerDown={onMove ? event => { event.currentTarget.setPointerCapture(event.pointerId); const p = dragPoint(event); if (p) setDrag({ id: node.id, ...p }); } : undefined}
           onPointerMove={onMove ? event => { if (drag?.id !== node.id) return; const p = dragPoint(event); if (p) setDrag({ id: node.id, ...p }); } : undefined}
           onPointerUp={onMove ? () => { if (drag?.id === node.id) { onMove(node.id, drag.x, drag.y); setDrag(null); } } : undefined}
           onPointerCancel={onMove ? () => setDrag(null) : undefined}>
           <circle r="22" className="node-halo" /><circle r="12" className={endpoint ? 'node-point endpoint' : 'node-point'} />
+          {internet && <g className="internet-badge" transform="translate(14,-26)"><rect x="-4" y="-9" width="62" height="17" rx="8.5"/><text x="27" y="3" textAnchor="middle">◍ internet</text></g>}
           <circle r="3" fill={node.online ? '#fff' : '#92958e'} />
           <title>{label} · {node.id}</title><text y="38" className="node-name" textAnchor="middle">{label}</text>
           <text y="52" className="node-id" textAnchor="middle">{node.id}{!node.online ? ' · offline' : ''}</text>
@@ -120,7 +136,7 @@ export function Topology({ state, message, events, onMove }: { state: MeshState;
       {!state.nodes.length && <text x="300" y="150" textAnchor="middle" className="empty-map">Waiting for a network snapshot</text>}
       {hopFrom && hopTo && current && <TracePacket key={replaying ? `replay-${playback.serial}` : `${current.messageId}:${current.packetKind}:${current.chunk}:${current.from}:${current.to}`} event={current} from={hopFrom} to={hopTo} duration={duration} live={!replaying}/>}
     </svg>
-    <div className="map-legend"><span><i className="legend-dot"/>Online node</span><span><i className="legend-line"/>Selected route</span><span className="map-not-scale">{onMove ? 'Drag a node to change distances' : 'Topology · not to scale'}</span></div>
+    <div className="map-legend"><span><i className="legend-dot"/>Online node</span><span><i className="legend-line"/>Selected route</span>{internetNode && <span><i className="legend-internet"/>Internet gateway</span>}<span className="map-not-scale">{onMove ? 'Drag a node to change distances' : 'Topology · not to scale'}</span></div>
     <div className="trace-playback"><div className="trace-playback-heading"><strong>{replaying ? 'Trace playback' : 'Live packet activity'}</strong><button aria-label="Replay selected trace" disabled={!events.some(event => event.kind === 'packet_tx')} onClick={replayTrace}><RotateCcw size={11}/>Replay trace</button></div>
       <div role="status" aria-label="Trace playback status">{current ? <>{current.from} → {current.to}{replaying ? ` · ${playback.queued} ${playback.queued === 1 ? 'hop' : 'hops'} queued` : ' · transmitting now'}{(!hopFrom || !hopTo) && ' · coordinates unavailable'}</> : replaying ? (playback.observed ? 'Trace complete' : 'Waiting for observed transmit events') : terminal ? deliveryLabel(message!) : 'Waiting for the next transmission'}</div>
       <p>{replaying ? 'Visual timing only · backend timing stays in the ledger.' : 'Live backend events · synchronized with the phones and ledger.'}</p>
@@ -190,6 +206,7 @@ export function App({ client }: { client: MeshClient }) {
   const isDefaultPair = leftId === 'node0' && rightId === 'node4';
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [endpoint, setEndpoint] = useState(state.endpoint);
   useEffect(() => { client.start(); return () => client.dispose(); }, [client]);
   useEffect(() => {
@@ -222,16 +239,18 @@ export function App({ client }: { client: MeshClient }) {
   return <div className="app-shell">
     <header className="topbar">
       <a href="#overview" className="brand" aria-label="Water Connect overview"><Waves size={26} strokeWidth={2.2}/><span>Water Connect</span></a>
-      <nav aria-label="Main navigation"><a className="active" href="#overview">Overview</a><a href="#packet-ledger">Packet ledger</a></nav>
+      <nav aria-label="Main navigation"><a className="active" href="#overview">Overview</a><a href="#packet-ledger">Packet ledger</a><a href="/connect/" target="_blank" rel="noreferrer">AI setup <ArrowUpRight size={11}/></a></nav>
       <div className="topbar-right"><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span><button className="icon-button" aria-label="Connection settings" onClick={() => { setEndpoint(state.endpoint); setSettingsOpen(true); }}><Settings2 size={18}/></button></div>
     </header>
 
     <main id="overview">
       <h1 className="sr-only">Water Connect</h1>
       {state.error && <div className="error-banner" role="alert">{state.error}</div>}
-      <PairPicker nodes={state.nodes.length ? state.nodes : [{ id: 'node0' }, { id: 'node4' }]} a={leftId} b={rightId} setA={setLeftId} setB={setRightId} status={<div className="pair-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div>}/>
+      <PairPicker nodes={state.nodes.length ? state.nodes : [{ id: 'node0' }, { id: 'node4' }]} a={leftId} b={rightId} setA={setLeftId} setB={setRightId} status={<div className="pair-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div>}
+        internet={state.ai?.internetNode ?? null} setInternet={state.mode === 'live' && state.ai && client.setInternetNode ? id => { client.setInternetNode!(id).catch(failure => setAiError(failure instanceof Error ? failure.message : 'Could not change the internet node.')); } : undefined}/>
+      {aiError && <div className="error-banner" role="alert">{aiError}</div>}
       <div className="demo-stage">
-        <aside className="phone-column boss-phone" aria-label={`${camper(leftId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(leftId)} profile`}><PhoneIdentity role="boss" conversation="playa" endpoints={left}/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat key={`left:${leftId}:${rightId}`} client={client} role="boss" endpoints={left} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "Basith, come meet me at the Mayan Warrior set in deep playa!" : `${camper(rightId)}, where are you on the playa?`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Mayan Warrior · Deep playa' : playaNodeLabels[leftId] ?? leftId}</div></aside>
+        <aside className="phone-column boss-phone" aria-label={`${camper(leftId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(leftId)} profile`}><PhoneIdentity role="boss" conversation="playa" endpoints={left}/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat key={`left:${leftId}:${rightId}`} client={client} role="boss" endpoints={left} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "Basith, come meet me at the Mayan Warrior set in deep playa!" : `${camper(rightId)}, where are you on the playa?`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} aiTab nodeName={camper} renderModelPicker={props => <ModelSelect {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Mayan Warrior · Deep playa' : playaNodeLabels[leftId] ?? leftId}</div></aside>
 
         <section className="console-column" aria-label="Network console">
 
@@ -251,7 +270,7 @@ export function App({ client }: { client: MeshClient }) {
           </section>
         </section>
 
-        <aside className="phone-column employee-phone" aria-label={`${camper(rightId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(rightId)} profile`}><PhoneIdentity role="employee" conversation="playa" endpoints={right}/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat key={`right:${rightId}:${leftId}`} client={client} role="employee" endpoints={right} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "On my way from the playa airport. See you at Mayan Warrior!" : `${camper(leftId)}, I can hear you through the mesh!`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Playa airport' : playaNodeLabels[rightId] ?? rightId}</div></aside>
+        <aside className="phone-column employee-phone" aria-label={`${camper(rightId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(rightId)} profile`}><PhoneIdentity role="employee" conversation="playa" endpoints={right}/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat key={`right:${rightId}:${leftId}`} client={client} role="employee" endpoints={right} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "On my way from the playa airport. See you at Mayan Warrior!" : `${camper(leftId)}, I can hear you through the mesh!`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} aiTab nodeName={camper} renderModelPicker={props => <ModelSelect {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Playa airport' : playaNodeLabels[rightId] ?? rightId}</div></aside>
       </div>
       <footer className="page-footer"><span><Waves size={14}/> Water Connect mesh simulator</span><span>Water Connect</span></footer>
     </main>

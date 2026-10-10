@@ -81,3 +81,14 @@ section,.topology-panel,.ledger-panel,.metric,.route-proof,.route-detail,.settin
 .last-message .metrics-row{background:#fff}
 main{padding-top:14px}
 @media(max-width:620px){.last-message{padding:12px 12px 2px}}
+
+/* Water AI: internet node picker, map badge, model picker */
+.internet-picker { display: flex; align-items: center; gap: 6px; margin-left: 10px; padding-left: 12px; border-left: 1px solid var(--line); font-size: 12px; color: #5c814a; }
+.pair-bar .internet-picker select { border-color: #b9cfa8; background-color: #f1f6ea; min-width: 110px; }
+.map-node.internet .node-halo { fill: #e3eed9; stroke: #7fa36a; stroke-width: 1.5; }
+.internet-badge rect { fill: #5c814a; }
+.internet-badge text { font-family: 'DM Sans', Arial, sans-serif; font-size: 9px; font-weight: 700; fill: #fff; }
+.legend-internet { height: 7px; width: 7px; border-radius: 50%; background: #e3eed9; border: 1.5px solid #7fa36a; display: inline-block; }
+.model-select { display: flex; align-items: center; gap: 6px; font-family: 'DM Sans', Arial, sans-serif; font-size: 10px; color: #888371; min-width: 0; flex: 1; }
+.model-select select { flex: 1; min-width: 0; font-size: 10px; padding: 4px 6px; border: 1px solid #ded8cc; border-radius: 6px; background: #fffcf7; color: #3f463d; }
+.topbar nav a svg { margin-left: 3px; }

@@ -40,9 +40,26 @@ from media import (
 )
 
 from shared.python.models import SimulationConfig, RoutingConfig, NodePosition
+from connect.app import create_app as create_connect_app
+
+try:
+    from .ai_gateway import AiGateway
+except ImportError:
+    from ai_gateway import AiGateway
 
 app = FastAPI(title="CHRP Mesh Service")
 backend = MeshBackend(playback_speed=float(os.environ.get("TEAMWATER_PLAYBACK_SPEED", "2")), diverse_routes=True)
+
+# Water Connect runs in this process under /connect; with WATER_DEMO=1 every node's phone is
+# already connected to one shared TeamWater account, so the AI tab works with no sign-up.
+connect_app = create_connect_app()
+_demo = getattr(connect_app.state, "demo", None)
+gateway = None  # created below, once on_backend_change exists
+
+
+def full_state():
+    return {**backend.get_state(), "ai": gateway.state() if gateway else None}
+
 
 # Track connected WebSocket clients
 connected_clients: Set[WebSocket] = set()
@@ -52,7 +69,7 @@ async def broadcast_state():
     """Push current mesh state to all connected WebSocket clients."""
     if not connected_clients:
         return
-    state = {"type": "state", **backend.get_state()}
+    state = {"type": "state", **full_state()}
     dead = set()
     for ws in connected_clients:
         try:
@@ -79,6 +96,8 @@ def on_backend_change():
 
 # Register the callback so the backend notifies us of changes
 backend.on_state_change = on_backend_change
+gateway = AiGateway(lambda: backend, connect_app, _demo["devices"] if _demo else {}, on_backend_change,
+                    internet_node=os.environ.get("TEAMWATER_INTERNET_NODE", "node5"))
 
 
 CONSOLE_DIST = Path(__file__).resolve().parent.parent / "apps" / "console" / "dist"
@@ -113,7 +132,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     connected_clients.add(websocket)
     # Send initial state
-    await websocket.send_json({"type": "state", **backend.get_state()})
+    await websocket.send_json({"type": "state", **full_state()})
     try:
         while True:
             await websocket.receive_text()  # keep alive / future commands
@@ -232,6 +251,8 @@ async def reset_simulation():
         distance_routing=backend.distance_routing,
     )
     await backend.close()
+    await gateway.close()
+    gateway.requests.clear()
     backend = MeshBackend(**config)
     backend.on_state_change = on_backend_change
     on_backend_change()
@@ -251,6 +272,25 @@ async def send_demo(media_type: str):
     name, encoder = choices[media_type]
     media = await asyncio.to_thread(encoder, (assets / name).read_bytes())
     return await submit_media("node0", "node5", media, f"Demo {media_type}")
+
+
+@app.post("/ai/ask")
+async def ai_ask(src: str = Form(...), question: str = Form(...), model_index: int = Form(0)):
+    """Ask Water AI from a phone. The question crosses the mesh to the internet node."""
+    try:
+        return {"request_id": await gateway.ask(src, question, model_index)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/ai/gateway")
+async def ai_set_gateway(node_id: str = Form("")):
+    """Choose which node has internet. Empty means no node does (AI waits honestly)."""
+    try:
+        gateway.set_internet_node(node_id or None)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"internet_node": gateway.internet_node}
 
 
 @app.get("/messages/{msg_id}/content")
@@ -283,8 +323,10 @@ async def get_nodes():
 @app.get("/state")
 async def get_state():
     """REST endpoint so other services can poll state without WebSockets."""
-    return backend.get_state()
+    return full_state()
 
+
+app.mount("/connect", connect_app)
 
 # Serve static files (the demo UI)
 app.mount(

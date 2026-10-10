@@ -1,0 +1,76 @@
+{% extends "base.html" %}{% block body %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow"><a href="{{ base }}/">Groups</a> / {{ group.name }}</div>
+    <h1>{{ group.name }}</h1>
+    <p class="lede">{{ members|length }} member{{ 's' if members|length != 1 }} · {{ devices|length }} connected phone{{ 's' if devices|length != 1 }}</p>
+  </div>
+  <a class="btn" href="{{ base }}/connect?group_id={{ group.id }}&device_name=Water%20phone">Connect a phone</a>
+</div>
+
+<div class="grid side">
+  <div class="grid">
+    <section class="panel">
+      <div class="panel-head"><h2>Invite people</h2></div>
+      {% if invite_url %}
+      <p class="small muted" style="margin:0">Send this link. It works for 7 days. They sign up or log in, then join.</p>
+      <div class="copy-row">
+        <input id="invite-url" type="text" readonly value="{{ invite_url }}" aria-label="Invite link">
+        <button type="button" class="btn ghost" data-copy="invite-url">Copy</button>
+      </div>
+      <form method="post" action="{{ base }}/groups/{{ group.id }}/invites" style="margin-top:10px"><button class="btn ghost small">Make a new link</button></form>
+      {% else %}
+      <p class="small muted" style="margin:0 0 12px">Everyone in the group can use Water AI, and their phones can relay questions for each other.</p>
+      <form method="post" action="{{ base }}/groups/{{ group.id }}/invites"><button class="btn">Create invite link</button></form>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Phones</h2><span class="badge {{ 'ok' if devices else 'warn' }}"><i></i>{{ devices|length }} connected</span></div>
+      {% if devices %}
+      <ul class="rows">
+        {% for d in devices %}
+        <li><div>{{ d.name }}<div class="meta">{{ d.owner }} · phone #{{ d.id }}</div></div>
+          <span class="meta">{{ d.seen }}</span></li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty">No phones yet. In Water, open Settings and tap <b>Enable AI</b>, or use <b>Connect a phone</b> above.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Members</h2></div>
+      <ul class="rows">
+        {% for m in members %}<li>{{ m.email }}<span class="badge {{ 'accent' if m.role == 'owner' }}">{{ m.role }}</span></li>{% endfor %}
+      </ul>
+    </section>
+  </div>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>AI today</h2>
+      <div class="stat">{{ usage }} <small>of {{ budget }} questions</small></div>
+      <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="{{ budget }}" aria-valuenow="{{ usage }}" aria-label="AI questions used today"><span style="width:{{ [100, (usage * 100 / budget)|round]|min if budget else 0 }}%"></span></div>
+      <p class="small muted" style="margin:0">Counts only questions that reached a model. "I don't know" answers and blocked questions are free.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Default model</h2>
+      <p class="small muted" style="margin-top:0">Phones use this unless the person picks another in Water settings.</p>
+      <form method="post" action="{{ base }}/groups/{{ group.id }}/model">
+        <label for="model">Model</label>
+        <select id="model" name="model_index">
+          {% for m in models %}
+          <option value="{{ m.index }}" {{ 'selected' if m.index == group.default_model }}>{{ m.label }} · {{ m.provider }} · {{ m.tier }}{{ ' · privacy: ' ~ m.privacy_level if m.privacy_level != 'ok' }}</option>
+          {% endfor %}
+        </select>
+        {% set cur = models[group.default_model] %}
+        <p class="small" style="margin:10px 0 0"><span class="badge {{ {'ok':'ok','unknown':'warn','avoid':'bad'}[cur.privacy_level] }}"><i></i>{{ cur.privacy }}</span></p>
+        <button class="btn block">Save</button>
+      </form>
+      <p class="small muted" style="margin:12px 0 0"><a href="{{ base }}/models">Compare all {{ models|length }} models</a></p>
+    </section>
+  </div>
+</div>
+{% endblock %}

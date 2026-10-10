@@ -38,7 +38,20 @@ export interface MeshState {
   scenario: Scenario; error: string | null;
   eventHistoryComplete?: boolean;
   routing?: { distanceAware: boolean; links: LinkMetric[] };
+  /** Water AI gateway state from the live service; null when the service has no AI support. */
+  ai?: AiState | null;
 }
+export type AiStage = 'waiting_for_gateway' | 'to_gateway' | 'ai_working' | 'answer_arriving' | 'answered' | 'failed';
+export type AiOutcome = 'ok' | 'general' | 'blocked' | 'over_budget' | 'no_grounding' | 'error';
+export interface AiRequest {
+  id: string; asker: string; gateway: string | null; question: string; modelIndex: number; model: string;
+  stage: AiStage; stages: { stage: AiStage; at: number }[]; attempts: number;
+  requestMessageIds: string[]; answerMessageIds: string[];
+  answer: string | null; outcome: AiOutcome | null; sources: string[]; receipt: boolean;
+  error: string; note: string; createdAt: number;
+}
+export interface AiState { internetNode: string | null; connectedNodes: string[]; requests: AiRequest[] }
+export interface AiModel { index: number; id: string; provider: string; label: string; tier: string; privacy: string; privacyLevel: 'ok' | 'unknown' | 'avoid' }
 export interface MediaAsset { uri: string; name: string; type: string; file?: Blob }
 export interface MeshClient {
   getSnapshot(): MeshState;
@@ -53,6 +66,12 @@ export interface MeshClient {
   moveNode?(nodeId: string, x: number, y: number): Promise<void>;
   sendText(src: string, dst: string, text: string): Promise<string>;
   sendMedia(src: string, dst: string, kind: 'image' | 'voice', asset: MediaAsset): Promise<string>;
+  /** Ask Water AI from a phone; the sealed question crosses the mesh to the internet node. Live mode only. */
+  askAi?(src: string, question: string, modelIndex?: number): Promise<string>;
+  /** Choose which node has internet (null: none). Live mode only. */
+  setInternetNode?(node: string | null): Promise<void>;
+  /** The model catalog served by Water Connect. */
+  listModels?(): Promise<AiModel[]>;
 }
 export interface Telemetry {
   transmittedBytes: number | null; receivedBytes: number | null; droppedPackets: number | null;

@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% block body %}
+<section class="hero">
+  <div>
+    <div class="eyebrow">Water AI · optional online setup</div>
+    <h1>An assistant that knows when it doesn't know.</h1>
+    <p class="lede">Water works with no internet. Turn on Water AI and your group can ask questions over the mesh. Answers come only from your verified field guide, and it says "I don't know" before it guesses.</p>
+    <div class="actions">
+      <a class="btn" href="{{ base }}/signup">Set up your group</a>
+      <a class="btn ghost" href="{{ base }}/login">I have an account</a>
+    </div>
+    {% if demo %}
+    <form method="post" action="{{ base }}/demo-login" style="margin-top:14px">
+      <button class="btn ghost small">Open the shared {{ demo.group }} demo account</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="flow" aria-label="How a question travels">
+    <div class="flow-step"><b>01</b><div><strong>Ask on your phone, offline</strong><span>Your question is sealed with your phone's own key and sent over the radio mesh.</span></div></div>
+    <div class="flow-arrow">↓ mesh hops</div>
+    <div class="flow-step"><b>02</b><div><strong>Any group phone with internet relays it</strong><span>That phone is the gateway. It carries the sealed question but cannot read it.</span></div></div>
+    <div class="flow-arrow">↓ https</div>
+    <div class="flow-step"><b>03</b><div><strong>Water Connect answers from the field guide</strong><span>Checked for prompt injection, grounded in your reference docs, shortened to one radio packet.</span></div></div>
+  </div>
+</section>
+
+<h2 class="section-title">What we promise</h2>
+<div class="grid three">
+  <div class="promise"><h3>Grounded or silent</h3><p>Every answer cites the fact it came from. If nothing in the field guide covers your question, you get "I don't know" and no model is called.</p></div>
+  <div class="promise"><h3>Honest about delivery</h3><p>Your phone shows each stage: waiting for a gateway, AI working, answer arriving. It never says answered until the answer is on your screen.</p></div>
+  <div class="promise"><h3>Your keys stay here</h3><p>Model keys never touch a phone or the radio. Your mesh messages never pass through this server. Only AI questions do, and they go to the model provider you choose.</p></div>
+</div>
+{% endblock %}

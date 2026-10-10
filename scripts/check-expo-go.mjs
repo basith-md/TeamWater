@@ -2,7 +2,7 @@
 // Offline prepublish guard. Store/device compatibility must be verified before
 // intentionally changing scripts/expo-go-target.json; this never guesses latest.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -40,7 +40,8 @@ try {
       const version = pkg[section]?.[name];
       if (version === undefined) continue;
       if (name === 'expo') expoFound = true;
-      check(name, version, `${relative(root, manifest)} ${section}`);
+      // POSIX separators so messages read the same on Windows and macOS.
+      check(name, version, `${relative(root, manifest).split(sep).join('/')} ${section}`);
     }
   }
   if (!expoFound) problems.push('No Expo dependency found in the project or declared workspaces.');

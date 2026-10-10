@@ -1,0 +1,49 @@
+{% extends "base.html" %}{% block body %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Model catalog · via Nicrron</div>
+    <h1>Models</h1>
+    <p class="lede">Every model reads the same field-guide facts and must answer in one radio packet (300 bytes). They differ in cost and in what the provider does with your questions.</p>
+  </div>
+</div>
+<div class="filters">
+  <input id="q" type="search" placeholder="Search models" aria-label="Search models">
+  <select id="privacy" aria-label="Filter by privacy">
+    <option value="">Any privacy</option>
+    <option value="ok">Not trained on</option>
+    <option value="unknown">Unknown policy</option>
+    <option value="avoid">Trained on / retained</option>
+  </select>
+</div>
+<div class="panel flush">
+  <div class="table-wrap">
+    <table id="models">
+      <thead><tr><th>Model</th><th>Provider</th><th>Cost</th><th>$ / M tokens (in · out)</th><th>Privacy</th></tr></thead>
+      <tbody>
+        {% for m in models %}
+        <tr data-privacy="{{ m.privacy_level }}" data-text="{{ (m.id ~ ' ' ~ m.provider)|lower }}">
+          <td><strong>{{ m.label }}</strong>{% if m.index == 0 %} <span class="badge accent">default</span>{% endif %}<span class="sub mono">{{ m.id }}</span></td>
+          <td>{{ m.provider }}</td>
+          <td class="mono">{{ m.tier }}</td>
+          <td class="mono">{{ '%.2f'|format(m.price_in) }} · {{ '%.2f'|format(m.price_out) }}</td>
+          <td><span class="badge {{ {'ok':'ok','unknown':'warn','avoid':'bad'}[m.privacy_level] }}"><i></i>{{ m.privacy }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="small muted">Privacy notes are Nicrron's published statements as of October 2026, not our own audit.</p>
+<script>
+(function () {
+  var q = document.getElementById('q'), p = document.getElementById('privacy');
+  function apply() {
+    var text = q.value.trim().toLowerCase(), level = p.value;
+    document.querySelectorAll('#models tbody tr').forEach(function (r) {
+      r.hidden = (text && r.dataset.text.indexOf(text) < 0) || (level && r.dataset.privacy !== level);
+    });
+  }
+  q.addEventListener('input', apply); p.addEventListener('change', apply);
+})();
+</script>
+{% endblock %}

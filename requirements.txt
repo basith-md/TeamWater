@@ -6,3 +6,8 @@ numpy
 pycodec2
 websockets
 gunicorn
+cryptography
+jinja2
+itsdangerous
+httpx
+prismtrace-sdk>=0.5.1

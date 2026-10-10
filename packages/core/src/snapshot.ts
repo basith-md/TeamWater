@@ -1,4 +1,4 @@
-import type { LinkMetric, MeshEvent, MeshLink, MeshMessage, MeshNode, RouteProof } from './types';
+import type { AiRequest, AiStage, AiState, LinkMetric, MeshEvent, MeshLink, MeshMessage, MeshNode, RouteProof } from './types';
 import type { BackendMessage, BackendMessageStatus, BackendNode, BackendState } from './backend-types';
 
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -20,6 +20,33 @@ function parseProof(p: unknown): RouteProof | undefined {
   };
 }
 const kinds = Object.keys({ text: true, image: true, voice: true, video: true, ai_request: true, ai_response: true } satisfies Record<BackendMessage['media_type'], true>);
+
+const aiStages: AiStage[] = ['waiting_for_gateway', 'to_gateway', 'ai_working', 'answer_arriving', 'answered', 'failed'];
+const outcomes = ['ok', 'general', 'blocked', 'over_budget', 'no_grounding', 'error'];
+const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter(string) : [];
+
+/** Water AI state is optional: older services omit it, and a malformed request is skipped, never fatal. */
+export function normalizeAi(value: unknown): AiState | null {
+  if (!object(value) || !Array.isArray(value.requests)) return null;
+  const requests: AiRequest[] = [];
+  for (const r of value.requests) {
+    if (!object(r) || !string(r.request_id) || !string(r.asker) || !string(r.question) || !aiStages.includes(r.stage as AiStage)) continue;
+    const stages = Array.isArray(r.stages) ? r.stages.filter((s): s is { stage: AiStage; at: number } => object(s) && aiStages.includes(s.stage as AiStage) && finite(s.at)) : [];
+    requests.push({
+      id: r.request_id, asker: r.asker, gateway: string(r.gateway) ? r.gateway : null, question: r.question,
+      modelIndex: finite(r.model_index) ? r.model_index : 0, model: string(r.model) ? r.model : '',
+      stage: r.stage as AiStage, stages: stages.map(s => ({ stage: s.stage, at: s.at * 1000 })),
+      attempts: finite(r.attempts) ? r.attempts : 0,
+      requestMessageIds: strings(r.request_msg_ids), answerMessageIds: strings(r.answer_msg_ids),
+      answer: string(r.answer) ? r.answer : null,
+      outcome: outcomes.includes(r.outcome as string) ? r.outcome as AiRequest['outcome'] : null,
+      sources: strings(r.sources), receipt: r.receipt === true,
+      error: string(r.error) ? r.error : '', note: string(r.note) ? r.note : '',
+      createdAt: finite(r.created_at) ? r.created_at * 1000 : 0,
+    });
+  }
+  return { internetNode: string(value.internet_node) ? value.internet_node : null, connectedNodes: strings(value.connected_nodes), requests };
+}
 
 /** Legacy service snapshots contain aggregate progress only, never verified content. */
 export function normalizeSnapshot(value: unknown) {
@@ -80,7 +107,7 @@ export function normalizeSnapshot(value: unknown) {
     });
   }
   const simulation = object(value.simulation) ? value.simulation : null;
-  return { nodes, links, messages, contentPaths, events,
+  return { nodes, links, messages, contentPaths, events, ai: normalizeAi(value.ai),
     packetEvents: Array.isArray(value.events),
     simulationTime: simulation && finite(simulation.simulation_time) ? simulation.simulation_time : null,
     bitRate: simulation && finite(simulation.bit_rate) && simulation.bit_rate > 0 ? simulation.bit_rate : null,
