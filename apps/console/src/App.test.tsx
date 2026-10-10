@@ -45,31 +45,39 @@ function makeClient(overrides: Partial<MeshState> = {}): MeshClient {
 }
 
 describe('mesh console', () => {
-  it('describes checksum receipts without claiming a cryptographic signature', () => {
+  it('shows selected message verification without claiming a cryptographic signature', () => {
     render(<App client={makeClient({ mode: 'live', messages: { alpha: {
       ...message('alpha', ['node0', 'node2', 'node4']), status: 'delivered', received: 2,
       integrity: 'verified', receiptConfirmed: true,
     } } })}/>);
-    const narrator = screen.getByRole('status', { name: 'What is happening' });
-    expect(narrator).toHaveTextContent('checksum receipt');
-    expect(narrator).not.toHaveTextContent(/signed|only now/i);
+    const summary = screen.getByRole('status', { name: 'Selected message' });
+    expect(summary).toHaveTextContent('Delivered · verified by receiver');
+    expect(summary).not.toHaveTextContent(/signed|only now/i);
   });
 
-  it('separates receiver verification from sender confirmation and avoids a fixed radio rate', () => {
-    const delivered = { ...message('alpha', ['node0', 'node4']), integrity: 'verified' as const, status: 'awaiting_receipt' as const, received: 2 };
+  it('shows receipt-unconfirmed delivery accurately despite receiver verification', () => {
+    const delivered = { ...message('alpha', ['node0', 'node4']), integrity: 'verified' as const, status: 'receipt_unconfirmed' as const, received: 2 };
     const view = render(<App client={makeClient({ mode: 'live', messages: { alpha: delivered } })}/>);
-    expect(screen.getByRole('status', { name: 'What is happening' })).toHaveTextContent('Receiver verified');
+    expect(screen.getByRole('status', { name: 'Selected message' })).toHaveTextContent('Delivery unconfirmed · receiver verified');
     view.unmount();
     render(<App client={makeClient({ mode: 'live', messages: { alpha: message('alpha', ['node0', 'node4']) } })}/>);
-    const narrator = screen.getByRole('status', { name: 'What is happening' });
-    expect(narrator).not.toHaveTextContent(/1 kbps|stays blank/i);
+    expect(screen.getByRole('status', { name: 'Selected message' })).toHaveTextContent('In transit');
   });
 
   it('does not claim a failed transfer means the receiver never reconstructed content', () => {
     render(<App client={makeClient({ mode: 'live', messages: { alpha: {
       ...message('alpha', ['node0', 'node4']), status: 'failed', received: 2, integrity: 'verified',
     } } })}/>);
-    expect(screen.getByRole('status', { name: 'What is happening' })).not.toHaveTextContent(/shows nothing|never had the full message/i);
+    const summary = screen.getByRole('status', { name: 'Selected message' });
+    expect(summary).toHaveTextContent('Failed');
+    expect(summary).not.toHaveTextContent(/shows nothing|never had the full message/i);
+  });
+
+  it('does not claim sender confirmation without a confirmed receipt', () => {
+    render(<App client={makeClient({ mode: 'live', messages: { alpha: {
+      ...message('alpha', ['node0', 'node4']), status: 'delivered', received: 2, integrity: 'verified', receiptConfirmed: false,
+    } } })}/>);
+    expect(screen.getByRole('status', { name: 'Selected message' })).toHaveTextContent('Receiver verified · awaiting receipt');
   });
 
   it('starts the newly chosen pair with correctly addressed drafts', () => {

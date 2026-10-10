@@ -10,7 +10,7 @@ test('Malcome invites Basith through the live playa mesh and receives a verified
   const receiver = page.getByTestId('phone-employee');
   await expect(sender.getByPlaceholder('Message Basith…')).toBeVisible();
   await expect(receiver.getByPlaceholder('Message Malcome…')).toBeVisible();
-  await expect(page.getByRole('group', { name: 'Malcome profile' })).toContainText('Deep playa');
+  await expect(page.getByRole('group', { name: 'Malcome profile' })).toContainText('Deep Playa');
   await expect(page.getByRole('group', { name: 'Basith profile' })).toContainText('Playa airport');
   await expect(page.getByRole('img', { name: 'Mesh network topology' })).toContainText('Lucas');
   await expect(page.getByRole('img', { name: 'Mesh network topology' })).toContainText('Shravanthi');

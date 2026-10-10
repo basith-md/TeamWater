@@ -155,16 +155,28 @@ export function Topology({ state, message, events, onMove }: { state: MeshState;
   </div>;
 }
 
-function narrate(message: MeshMessage | undefined, events: MeshEvent[]): { title: string; body: string } {
-  if (!message) return { title: 'How this works', body: 'Send a message from either phone. Small radio packets hop across relay nodes. Receiver verification needs every chunk and a matching checksum; sender delivery confirmation also needs the checksum receipt to return.' };
-  const route = message.route.length ? message.route.join(' → ') : 'the mesh';
-  const drops = events.filter(e => e.kind === 'packet_dropped').length, retries = events.filter(e => e.kind === 'packet_retry').length;
-  const loss = drops || retries ? ` The visible trace records ${drops} dropped transmissions and ${retries} retry attempts.` : '';
-  if (message.status === 'failed') return { title: 'Transfer failed', body: `Delivery was not confirmed along ${route}. ${message.integrity === 'verified' ? 'The receiver verified the content, but the sender did not confirm the final receipt.' : 'The transfer may have failed before receiver verification or while returning the receipt.'}${loss}` };
-  if (message.integrity === 'verified' && message.status === 'delivered' && message.receiptConfirmed) return { title: 'Delivered and verified', body: `All ${message.totalChunks} chunks arrived over ${route}. The receiver rebuilt the message and its checksum matched. The checksum receipt returned to the sender, confirming delivery.${loss}` };
-  if (message.integrity === 'verified') return { title: 'Receiver verified · delivery unconfirmed', body: `The receiver rebuilt the message and its checksum matched. It can show the verified content while the sender awaits the checksum receipt.${loss}` };
-  if (message.status === 'awaiting_receipt' || message.status === 'receipt_unconfirmed') return { title: 'Waiting for the receiver\u2019s proof', body: 'The sender is awaiting a checksum receipt. Receiver verification and sender delivery confirmation are separate; a missing receipt can leave delivery unconfirmed.' };
-  return { title: 'In transit', body: `Sending ${message.totalChunks} chunks over ${route}. ${message.received}/${message.totalChunks} have reached the receiver so far. Each hop waits for an acknowledgment and can retry lost packets. Unverified previews may appear before reconstruction and checksum verification.${loss}` };
+const statusLabel = (m: MeshMessage) =>
+  m.status === 'failed' ? 'Failed'
+  : m.status === 'cancelled' ? 'Cancelled'
+  : m.status === 'receipt_unconfirmed' ? `Delivery unconfirmed${m.integrity === 'verified' ? ' · receiver verified' : ''}`
+  : m.integrity === 'verified' && m.status === 'delivered' && m.receiptConfirmed ? 'Delivered · verified by receiver'
+  : m.integrity === 'verified' ? 'Receiver verified · awaiting receipt'
+  : m.status === 'awaiting_receipt' ? 'Waiting for receipt'
+  : m.status === 'reassembled' ? 'Received · unverified'
+  : 'In transit';
+
+function LastMessage({ message }: { message: MeshMessage | undefined }) {
+  const verifiedAt = message?.receiverVerifiedSeconds;
+  const tiles: { name: string; value: number | null; unit: string; note: string; icon: React.ReactNode }[] = [
+    { name: 'Latency', value: verifiedAt ?? message?.etaSeconds ?? null, unit: 's', note: verifiedAt != null ? 'Time to receiver verification' : message?.etaSeconds != null ? 'Estimated time remaining' : 'Not reported yet', icon: <Activity size={13}/> },
+    { name: 'Bytes on air', value: message?.radioBytes ?? null, unit: 'B', note: message?.encodedBytes !== undefined ? `Payload ${message.encodedBytes.toLocaleString()} B` : 'All transmitted frames', icon: <Signal size={13}/> },
+    { name: 'Retries', value: message?.retries ?? null, unit: '', note: message ? `${message.received} / ${message.totalChunks} chunks received` : 'No message selected', icon: <RotateCcw size={13}/> },
+    { name: 'Lost packets', value: message?.lostPackets ?? null, unit: '', note: message?.airtimeSeconds !== undefined ? `Airtime ${message.airtimeSeconds.toFixed(1)} s` : 'Dropped frames', icon: <ArrowDownLeft size={13}/> },
+  ];
+  return <div className="last-message" role="status" aria-label="Selected message">
+    <div className="last-head"><span className="small-label">SELECTED MESSAGE{message ? ` · ${message.kind}` : ''}</span><strong>{message ? statusLabel(message) : 'No message selected'}</strong></div>
+    <div className="metrics-row">{tiles.map(tile => <Metric key={tile.name} {...tile}/>)}</div>
+  </div>;
 }
 
 function RouteProofPanel({ message, distanceAware }: { message?: MeshMessage; distanceAware: boolean }) {
@@ -183,11 +195,6 @@ function RouteProofPanel({ message, distanceAware }: { message?: MeshMessage; di
     </tbody></table>
     <details><summary>Per-hop numbers</summary><ul>{proof.links.map(l => <li key={`${l.from}-${l.to}`}>{name(l.from)} → {name(l.to)}: {Math.round(l.distance)} m, {Math.round(l.loss * 100)}% loss, cost {l.etx.toFixed(2)}</li>)}</ul></details>
   </div>;
-}
-
-function Narrator({ message, events }: { message: MeshMessage | undefined; events: MeshEvent[] }) {
-  const note = narrate(message, events);
-  return <div className="narrator" role="status" aria-label="What is happening"><span className="small-label">WHAT&apos;S HAPPENING</span><strong>{note.title}</strong><p>{note.body}</p></div>;
 }
 
 export function App({ client }: { client: MeshClient }) {
@@ -256,25 +263,25 @@ export function App({ client }: { client: MeshClient }) {
           <div className="network-conversation"><div className="network-conversation-title"><h2>{camper(leftId)} → {camper(rightId)}</h2><span className="network-mesh-badge"><i/>MESH</span></div><p>{isDefaultPair ? 'Playa airport' : (playaNodeLabels[rightId] ?? rightId).split(' · ')[1] ?? rightId}</p><div className="network-conversation-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div></div>
           <div className="mode-note"><CircleHelp size={12}/>Off-grid phones in a local mesh simulation · running simulator required.</div>
 
-          <section className="topology-panel"><div className="panel-heading"><div><span className="eyebrow">THE NETWORK</span><h2>Every hop counts.</h2></div><button className={`distance-toggle ${distanceAware ? 'on' : ''}`} role="switch" aria-checked={distanceAware} aria-label="Distance-aware routing" onClick={toggleDistance}><i/>Distances &amp; best route</button><span className="nodes-status"><i/>{state.nodes.filter(node => node.online).length} / {state.nodes.length} nodes online</span></div>
-            <Narrator message={selected} events={events}/>
+          <section className="topology-panel"><div className="panel-heading"><div><h2>Network</h2></div><button className={`distance-toggle ${distanceAware ? 'on' : ''}`} role="switch" aria-checked={distanceAware} aria-label="Distance-aware routing" onClick={toggleDistance}><i/>Distances &amp; best route</button><span className="nodes-status"><i/>{state.nodes.filter(node => node.online).length} / {state.nodes.length} nodes online</span></div>
+            <LastMessage message={selected}/>
             {routingError && <div className="error-banner" role="alert">{routingError}</div>}
             <Topology state={state} message={selected} events={events} onMove={client.moveNode ? moveNode : undefined}/>
             <div className="route-detail"><div><span className="small-label">SELECTED ROUTE</span><div className="route-path" aria-label="Selected route">{selected ? (selected.route.length ? selected.route.join(' → ') : 'Route unavailable') : 'Send a message to trace its route'}</div></div><div className={`route-status ${verified ? 'verified' : ''}`}>{verified ? <ShieldCheck size={15}/> : <Activity size={15}/>}<span>{selected ? deliveryLabel(selected) : 'Ready when you are'}</span></div></div>
           <RouteProofPanel message={selected} distanceAware={distanceAware}/>
           </section>
           <div className="metrics-row"><Metric name="Bandwidth" value={telemetry.bitRate === null ? null : telemetry.bitRate / 1000} unit="kbps" note={replay ? 'Sample radio configuration' : 'Configured radio bit rate'} icon={<Signal size={13}/>}/><Metric name="Delay" value={telemetry.latencyMs === null ? null : telemetry.latencyMs / 1000} unit="s" note={telemetry.latencyMs === null ? 'Receiver verification timing not reported' : replay ? 'Sample message elapsed time' : 'Time to receiver verification'} icon={<Activity size={13}/>}/><Metric name="Range" value={telemetry.rangeMeters} unit="m" note={telemetry.rangeMeters === null ? 'Radio range is not reported' : replay ? 'Sample radio range' : 'Configured radio range'} icon={<Radio size={13}/>}/><Metric name="Packet loss" value={telemetry.observedLossRate === null ? null : telemetry.observedLossRate * 100} unit="%" note="Observed transmitted frames" icon={<ArrowDownLeft size={13}/>}/></div>
-          <section className="ledger-panel" id="packet-ledger" data-testid="packet-log"><div className="ledger-heading"><div><span className="eyebrow">FOLLOW THE SIGNAL</span><h2>Packet ledger<span className="count-badge">{events.length}</span></h2></div><span className="ledger-state"><i/>{replay ? 'REPLAY TRACE' : 'LIVE EVENTS'}</span></div>
+          <section className="ledger-panel" id="packet-ledger" data-testid="packet-log"><div className="ledger-heading"><div><h2>Packet ledger<span className="count-badge">{events.length}</span></h2></div><span className="ledger-state"><i/>{replay ? 'REPLAY TRACE' : 'LIVE EVENTS'}</span></div>
             {!!messages.length && <div className="message-picker" aria-label="Inspect messages">{messages.map(message => <button key={message.id} aria-label={`Inspect message ${message.id}`} aria-pressed={selected?.id === message.id} onClick={() => setSelectedId(message.id)}><span className="message-kind">{message.kind}</span><span>{message.preview || message.id}</span><ChevronRight size={12}/></button>)}</div>}
             <div className="ledger-scroll"><table aria-label="Packet ledger"><thead><tr><th>{replay ? 'Elapsed' : 'Sim time'}</th><th>Packet</th><th>Hop</th><th>Event</th><th>Bytes</th></tr></thead><tbody>{events.slice(-60).reverse().map(event => <tr key={event.id} className={`event-${event.kind}`}><td>{traceTime(event.at, selected?.createdAt, replay)}</td><td>{event.packetId}</td><td>{event.from}<span className="hop-arrow">→</span>{event.to}</td><td><span className="event-label">{eventLabels[event.kind]}</span></td><td>{event.bytes ?? '—'}</td></tr>)}</tbody></table>
               {!events.length && <div className="ledger-empty"><span className="empty-signal"><Radio size={23}/></span><strong>{!replay && !state.capabilities.packetEvents ? 'Packet events unavailable' : 'The next message starts the story.'}</strong><p>{!replay && !state.capabilities.packetEvents ? 'This backend does not provide a packet event stream.' : 'Send from either phone to follow its packets, hop by hop.'}</p></div>}
-            </div><div className="ledger-footer"><span>{selected ? `${selected.received} / ${selected.totalChunks} chunks received` : 'No message selected'}</span><span>{replay ? 'DEMO DATA' : 'SERVICE DATA'}<span className="footer-cross">+</span></span></div>
+            </div><div className="ledger-footer"><span>{selected ? `${selected.received} / ${selected.totalChunks} chunks received` : 'No message selected'}</span><span>{replay ? 'DEMO DATA' : 'SERVICE DATA'}</span></div>
           </section>
         </section>
 
         <aside className="phone-column employee-phone" aria-label={`${camper(rightId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(rightId)} profile`}><PhoneIdentity role="employee" conversation="playa" endpoints={right}/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat key={`right:${rightId}:${leftId}`} client={client} role="employee" endpoints={right} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "On my way from the playa airport. See you at Mayan Warrior!" : `${camper(leftId)}, I can hear you through the mesh!`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Playa airport' : playaNodeLabels[rightId] ?? rightId}</div></aside>
       </div>
-      <footer className="page-footer"><span><Waves size={14}/> BUILT TO KEEP PEOPLE CONNECTED.</span><span>TeamWater / CHRP <span className="footer-cross">+</span></span></footer>
+      <footer className="page-footer"><span><Waves size={14}/> TeamWater mesh simulator</span><span>TeamWater / CHRP </span></footer>
     </main>
     {settingsOpen && <div className="dialog-backdrop"><section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div className="dialog-heading"><h2 id="settings-title">Connection settings</h2><button className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X size={18}/></button></div><p>Use the local proxy or enter your simulator service URL.</p><form onSubmit={event => { event.preventDefault(); client.setMode('live', endpoint.trim() || '/api'); setSelectedId(null); setSettingsOpen(false); }}><label htmlFor="endpoint">Backend URL</label><input id="endpoint" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder="/api"/><p className="settings-hint">/api uses the configured local simulator proxy.</p><button className="apply-button" type="submit">Connect to live backend<ArrowUpRight size={15}/></button></form></section></div>}
   </div>;
