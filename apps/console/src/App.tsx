@@ -56,17 +56,26 @@ function TracePacket({ event, from, to }: { event: MeshEvent; from: { x: number;
   </g>;
 }
 
-export function Topology({ state, message, events }: { state: MeshState; message?: MeshMessage; events: MeshEvent[] }) {
-  const xs = state.nodes.map(node => node.x), ys = state.nodes.map(node => node.y);
-  const minX = Math.min(...xs), minY = Math.min(...ys);
-  const width = Math.max(...xs) - minX || 1, height = Math.max(...ys) - minY || 1;
-  const positions = new Map(state.nodes.map(node => [node.id, { x: 64 + (node.x - minX) / width * 472, y: 72 + (node.y - minY) / height * 170 }]));
+const toMap = (x: number, y: number) => ({ x: 15 + x * 0.95, y: 10 + y * 0.68 });
+const fromMap = (x: number, y: number) => ({ x: Math.round(Math.max(0, Math.min(600, (x - 15) / 0.95))), y: Math.round(Math.max(0, Math.min(420, (y - 10) / 0.68))) });
+
+export function Topology({ state, message, events, onMove }: { state: MeshState; message?: MeshMessage; events: MeshEvent[]; onMove?: (nodeId: string, x: number, y: number) => void }) {
+  const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const positions = new Map(state.nodes.map(node => [node.id, drag?.id === node.id ? toMap(drag.x, drag.y) : toMap(node.x, node.y)]));
+  const dragPoint = (event: React.PointerEvent) => {
+    const svg = svgRef.current, matrix = svg?.getScreenCTM();
+    if (!svg || !matrix) return null;
+    const point = svg.createSVGPoint(); point.x = event.clientX; point.y = event.clientY;
+    const local = point.matrixTransform(matrix.inverse());
+    return fromMap(local.x, local.y);
+  };
   const route = message?.route ?? [];
   const playback = useTracePlayback(events, `${state.mode}:${state.endpoint}:${message?.id ?? 'none'}`);
   const hopFrom = playback.current && positions.get(playback.current.from), hopTo = playback.current && positions.get(playback.current.to);
   return <div className="topology-canvas">
     <div className="map-coordinate">Simulated Mesh Network</div>
-    <svg className="mesh-map" viewBox="0 0 600 300" role="img" aria-label="Mesh network topology">
+    <svg ref={svgRef} className="mesh-map" viewBox="0 0 600 300" role="img" aria-label="Mesh network topology">
       <defs><pattern id="mesh-grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M 24 0 L 0 0 0 24" fill="none" stroke="#deddd3" strokeWidth=".6" /></pattern></defs>
       <rect width="600" height="300" fill="url(#mesh-grid)" />
       <g className="map-contours" fill="none" stroke="#dcded3" strokeWidth="1"><path d="M-20 110C85 10 130 70 197 115S380 212 620 34"/><path d="M-20 126C82 26 137 87 201 131S383 228 620 50"/><path d="M-20 142C79 42 144 104 205 147S386 244 620 66"/><path d="M-20 158C76 58 151 121 209 163S389 260 620 82"/><path d="M-20 174C73 74 158 138 213 179S392 276 620 98"/></g>
@@ -81,7 +90,12 @@ export function Topology({ state, message, events }: { state: MeshState; message
         const point = positions.get(node.id)!;
         const endpoint = node.id === 'node0' || node.id === 'node4';
         const label = playaNodeLabels[node.id] ?? `${node.name} · Relay`;
-        return <g key={node.id} transform={`translate(${point.x},${point.y})`} className={node.online ? 'map-node' : 'map-node offline'}>
+        return <g key={node.id} transform={`translate(${point.x},${point.y})`} className={node.online ? 'map-node' : 'map-node offline'}
+          style={onMove ? { cursor: 'grab', touchAction: 'none' } : undefined}
+          onPointerDown={onMove ? event => { event.currentTarget.setPointerCapture(event.pointerId); const p = dragPoint(event); if (p) setDrag({ id: node.id, ...p }); } : undefined}
+          onPointerMove={onMove ? event => { if (drag?.id !== node.id) return; const p = dragPoint(event); if (p) setDrag({ id: node.id, ...p }); } : undefined}
+          onPointerUp={onMove ? () => { if (drag?.id === node.id) { onMove(node.id, drag.x, drag.y); setDrag(null); } } : undefined}
+          onPointerCancel={onMove ? () => setDrag(null) : undefined}>
           <circle r="22" className="node-halo" /><circle r="12" className={endpoint ? 'node-point endpoint' : 'node-point'} />
           <circle r="3" fill={node.online ? '#fff' : '#92958e'} />
           <title>{label} · {node.id}</title><text y="38" className="node-name" textAnchor="middle">{label}</text>
@@ -91,7 +105,7 @@ export function Topology({ state, message, events }: { state: MeshState; message
       {!state.nodes.length && <text x="300" y="150" textAnchor="middle" className="empty-map">Waiting for a network snapshot</text>}
       {hopFrom && hopTo && playback.current && <TracePacket key={playback.serial} event={playback.current} from={hopFrom} to={hopTo}/>}
     </svg>
-    <div className="map-legend"><span><i className="legend-dot"/>Online node</span><span><i className="legend-line"/>Selected route</span><span className="map-not-scale">Topology · not to scale</span></div>
+    <div className="map-legend"><span><i className="legend-dot"/>Online node</span><span><i className="legend-line"/>Selected route</span><span className="map-not-scale">{onMove ? 'Drag a node to change distances' : 'Topology · not to scale'}</span></div>
     <div className="trace-playback"><div className="trace-playback-heading"><strong>Trace playback</strong><button aria-label="Replay selected trace" disabled={!events.some(event => event.kind === 'packet_tx')} onClick={playback.replay}><RotateCcw size={11}/>Replay trace</button></div>
       <div role="status" aria-label="Trace playback status">{playback.current ? <>{playback.current.from} → {playback.current.to} · {playback.queued} {playback.queued === 1 ? 'hop' : 'hops'} queued{(!hopFrom || !hopTo) && ' · coordinates unavailable'}</> : playback.observed ? 'Trace complete' : 'Waiting for observed transmit events'}</div>
       <p>Visual timing only · backend timing stays in the ledger.</p>
@@ -141,6 +155,10 @@ export function App({ client }: { client: MeshClient }) {
   async function toggleDistance() {
     setRoutingError(null);
     try { await client.setDistanceRouting?.(!distanceAware); } catch (failure) { setRoutingError(failure instanceof Error ? failure.message : 'Could not change routing.'); }
+  }
+  async function moveNode(nodeId: string, x: number, y: number) {
+    setRoutingError(null);
+    try { await client.moveNode?.(nodeId, x, y); } catch (failure) { setRoutingError(failure instanceof Error ? failure.message : 'Could not move node.'); }
   }
   const [leftId, setLeftId] = useState('node0');
   const [rightId, setRightId] = useState('node4');
@@ -199,7 +217,7 @@ export function App({ client }: { client: MeshClient }) {
           <section className="topology-panel"><div className="panel-heading"><div><span className="eyebrow">THE NETWORK</span><h2>Every hop counts.</h2></div><button className={`distance-toggle ${distanceAware ? 'on' : ''}`} role="switch" aria-checked={distanceAware} aria-label="Distance-aware routing" onClick={toggleDistance}><i/>Distances &amp; best route</button><span className="nodes-status"><i/>{state.nodes.filter(node => node.online).length} / {state.nodes.length} nodes online</span></div>
             <Narrator message={selected} events={events}/>
             {routingError && <div className="error-banner" role="alert">{routingError}</div>}
-            <Topology state={state} message={selected} events={events}/>
+            <Topology state={state} message={selected} events={events} onMove={client.moveNode ? moveNode : undefined}/>
             <div className="route-detail"><div><span className="small-label">SELECTED ROUTE</span><div className="route-path" aria-label="Selected route">{selected ? (selected.route.length ? selected.route.join(' → ') : 'Route unavailable') : 'Send a message to trace its route'}</div></div><div className={`route-status ${verified ? 'verified' : ''}`}>{verified ? <ShieldCheck size={15}/> : <Activity size={15}/>}<span>{selected ? deliveryLabel(selected) : 'Ready when you are'}</span></div></div>
           <RouteProofPanel message={selected} distanceAware={distanceAware}/>
           </section>

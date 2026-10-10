@@ -50,6 +50,7 @@ export interface MeshClient {
   setPlaybackSpeed(speed: number): void;
   reset(): void;
   setDistanceRouting?(on: boolean): Promise<void>;
+  moveNode?(nodeId: string, x: number, y: number): Promise<void>;
   sendText(src: string, dst: string, text: string): Promise<string>;
   sendMedia(src: string, dst: string, kind: 'image' | 'voice', asset: MediaAsset): Promise<string>;
 }

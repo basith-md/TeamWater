@@ -189,6 +189,11 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
       const response = await fetch(`${urls(state.endpoint).http}/simulation/routing`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ distance_routing: on }) });
       if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(typeof body?.detail === 'string' ? body.detail : 'Could not change routing.'); }
     },
+    moveNode: async (nodeId, x, y) => {
+      if (state.mode !== 'live') return;
+      const response = await fetch(`${urls(state.endpoint).http}/simulation/nodes/${encodeURIComponent(nodeId)}/position`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ x, y }) });
+      if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(typeof body?.detail === 'string' ? body.detail : 'Could not move node.'); }
+    },
     reset: () => { cancel(); emit(initialState(state.mode, state.endpoint, state.scenario, state.config.playbackSpeed)); if (started && state.mode === 'live') connect(); },
     sendText: async (src, dst, text) => {
       ensureActive(); if (!text.trim()) throw new Error('Enter a message.');

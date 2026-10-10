@@ -197,6 +197,12 @@ class MeshBackend:
         self._update_connections()
         self._notify()
 
+    def move_node(self, node_id, x, y):
+        node = self.nodes[node_id]
+        node.x, node.y = float(x), float(y)
+        self._update_connections()
+        self._notify()
+
     def set_node_online(self, node_id, online):
         self.nodes[node_id].online = online
         self._update_connections()

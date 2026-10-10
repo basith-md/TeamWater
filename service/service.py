@@ -210,6 +210,23 @@ async def configure_routing(config: RoutingConfig):
     return backend.get_state()["simulation"]
 
 
+class NodePosition(BaseModel):
+    x: float
+    y: float
+
+
+@app.post("/simulation/nodes/{node_id}/position")
+async def move_node(node_id: str, position: NodePosition):
+    if node_id not in backend.nodes:
+        raise HTTPException(404, "Unknown node")
+    if not (0 <= position.x <= 600 and 0 <= position.y <= 420):
+        raise HTTPException(422, "Position outside the map")
+    if any(not task.done() for task in backend._tasks.values()):
+        raise HTTPException(409, "Wait for active transfers to finish before moving nodes")
+    backend.move_node(node_id, position.x, position.y)
+    return backend.get_state()["simulation"]
+
+
 @app.post("/simulation/reset")
 async def reset_simulation():
     global backend
