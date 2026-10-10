@@ -59,8 +59,8 @@ export function PhoneChat({ client, role, endpoints, conversation = 'work', init
   const list = useRef<ScrollView>(null);
   const identity = { ...identities[conversation][role], ...(endpoints?.self ? { name: endpoints.self } : {}), ...(endpoints?.contact ? { contact: endpoints.contact } : {}) };
   const emptyText = conversation === 'playa'
-    ? `You’re connected to ${identity.contact} through the mesh. Send a message to meet up on the playa.`
-    : role === 'boss' ? 'Jordan is at Burning Man. Send a message to ask for help with the code.' : 'You’re connected to Alex through the mesh. Send a reply when you’re ready.';
+    ? `Chatting with ${identity.contact} over the mesh.`
+    : role === 'boss' ? 'Jordan is at Burning Man. Send a message to ask for help with the code.' : 'Chatting with Alex through the mesh. Send a reply when you’re ready.';
   const starter = conversation === 'playa' ? 'Hey Basith — come join us at Mayan Warrior on the deep playa!' : 'Hey Jordan — I know you’re at Burning Man, but could you help fix the code when you get a signal?';
   const { src, dst } = endpoints ?? roleNodes(role);
   const messages = Object.values(state.messages).filter(message => (message.src === src && message.dst === dst) || (message.src === dst && message.dst === src)).sort((a, b) => {
@@ -111,7 +111,7 @@ export function PhoneChat({ client, role, endpoints, conversation = 'work', init
     {showConversationHeader && !compact && <View style={styles.modeRow}><Text style={styles.modeLabel}>{state.mode === 'replay' ? 'Sample replay · example messages' : 'Live simulation'}</Text><Text style={styles.connection}>{state.connection === 'connected' ? 'Connected' : state.connection === 'connecting' ? 'Connecting…' : 'Offline'}</Text></View>}
     <ScrollView ref={list} style={styles.messages} contentContainerStyle={[styles.messageContent, compact && styles.compactMessageContent]} onLayout={() => list.current?.scrollToEnd({ animated: false })} onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
       {!compact && <View style={styles.dayRow}><View style={styles.dayLine}/><Text style={styles.day}>OFF THE GRID. STILL IN SYNC.</Text><View style={styles.dayLine}/></View>}
-      {messages.length === 0 && <View style={[styles.empty, compact && styles.compactEmpty]}><Text style={styles.emptyTitle}>A signal through the dust.</Text><Text style={styles.emptyText}>{emptyText}</Text>{role === 'boss' && <Pressable accessibilityRole="button" accessibilityLabel="Use conversation starter" style={styles.starter} onPress={() => setDraft(starter)}><Text style={styles.starterText}>Use conversation starter ↗</Text></Pressable>}</View>}
+      {messages.length === 0 && <View style={[styles.empty, compact && styles.compactEmpty]}><Text style={styles.emptyTitle}>No messages yet</Text><Text style={styles.emptyText}>{emptyText}</Text>{role === 'boss' && <Pressable accessibilityRole="button" accessibilityLabel="Use conversation starter" style={styles.starter} onPress={() => setDraft(starter)}><Text style={styles.starterText}>Use conversation starter ↗</Text></Pressable>}</View>}
       {messages.map(message => <MessageBubble key={message.id} message={message} outgoing={message.src === src} mode={state.mode} sender={message.src === src ? identity.name : identity.contact} renderAudio={renderAudio} />)}
     </ScrollView>
     {(error || state.error) && <View accessibilityRole="alert" style={styles.error}><Text style={styles.errorText}>{error || state.error}</Text></View>}
