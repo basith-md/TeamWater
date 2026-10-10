@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CHRP Mesh</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+    background: #000;
+    color: #fff;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .iphone {
+    width: 390px;
+    height: 844px;
+    background: #1c1c1e;
+    border-radius: 48px;
+    border: 8px solid #333;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .notch {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 160px;
+    height: 32px;
+    background: #000;
+    border-bottom-left-radius: 16px;
+    border-bottom-right-radius: 16px;
+    z-index: 10;
+  }
+  .status-bar {
+    height: 48px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 24px 8px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .app {
+    height: calc(100% - 48px);
+    display: flex;
+    flex-direction: column;
+  }
+  .map-container {
+    flex: 1.2;
+    background: #111;
+    position: relative;
+    overflow: hidden;
+  }
+  #map {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .node-label {
+    position: absolute;
+    font-size: 11px;
+    font-weight: 600;
+    text-shadow: 0 1px 2px #000;
+    pointer-events: none;
+  }
+  .chat-area {
+    flex: 1;
+    background: #1c1c1e;
+    border-top: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+  }
+  .msg-card {
+    background: #2c2c2e;
+    border-radius: 16px;
+    padding: 12px;
+    margin-bottom: 10px;
+    font-size: 14px;
+  }
+  .msg-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: #8e8e93;
+  }
+  .progress-bar {
+    height: 4px;
+    background: #3a3a3c;
+    border-radius: 2px;
+    margin: 8px 0;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: #007AFF;
+    width: 0%;
+    transition: width 0.3s;
+  }
+  .status-delivered { color: #34C759; }
+  .status-transit { color: #FF9500; }
+  .status-sending { color: #8e8e93; }
+  .controls {
+    padding: 12px;
+    background: #1c1c1e;
+    border-top: 1px solid #333;
+  }
+  select, input, button, textarea {
+    width: 100%;
+    margin-bottom: 8px;
+    padding: 10px;
+    border-radius: 10px;
+    border: none;
+    background: #2c2c2e;
+    color: #fff;
+    font-size: 15px;
+  }
+  button {
+    background: #007AFF;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:active { opacity: 0.7; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .honest-badge {
+    font-size: 10px;
+    background: #FF3B30;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="iphone">
+  <div class="notch"></div>
+  <div class="status-bar">
+    <span>9:41</span>
+    <span>CHRP Mesh</span>
+    <span>100%</span>
+  </div>
+  <div class="app">
+    <div class="map-container">
+      <canvas id="map"></canvas>
+    </div>
+    <div class="chat-area">
+      <div class="messages" id="messages"></div>
+      <div class="controls">
+        <div class="row">
+          <select id="src"><option>Loading...</option></select>
+          <select id="dst"><option>Loading...</option></select>
+        </div>
+        <textarea id="text" rows="2" placeholder="Type a message..."></textarea>
+        <div class="row">
+          <input type="file" id="image" accept="image/*" style="display:none">
+          <button onclick="document.getElementById('image').click()">📷 Image</button>
+          <input type="file" id="voice" accept="audio/*" style="display:none">
+          <button onclick="document.getElementById('voice').click()">🎤 Voice</button>
+        </div>
+        <button onclick="sendText()">Send Text</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('map');
+const ctx = canvas.getContext('2d');
+const messagesEl = document.getElementById('messages');
+let nodes = [];
+let connections = {};
+let messages = {};
+
+function resize() {
+  canvas.width = canvas.parentElement.clientWidth;
+  canvas.height = canvas.parentElement.clientHeight;
+  draw();
+}
+window.addEventListener('resize', resize);
+setTimeout(resize, 100);
+
+function draw() {
+  if (!canvas.width) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Scale factor (map is designed around 600 units)
+  const scale = Math.min(canvas.width / 600, canvas.height / 400);
+
+  // Connections
+  ctx.strokeStyle = '#3a3a3c';
+  ctx.lineWidth = 2;
+  for (const [a, neighbors] of Object.entries(connections)) {
+    const na = nodes.find(n => n.id === a);
+    if (!na) continue;
+    for (const b of neighbors) {
+      const nb = nodes.find(n => n.id === b);
+      if (!nb) continue;
+      ctx.beginPath();
+      ctx.moveTo(na.x * scale, na.y * scale);
+      ctx.lineTo(nb.x * scale, nb.y * scale);
+      ctx.stroke();
+    }
+  }
+
+  // Active routes
+  Object.values(messages).forEach(m => {
+    if (m.route && m.route.length > 1) {
+      ctx.strokeStyle = '#007AFF';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([4, 4]);
+      for (let i = 0; i < m.route.length - 1; i++) {
+        const na = nodes.find(n => n.id === m.route[i]);
+        const nb = nodes.find(n => n.id === m.route[i+1]);
+        if (na && nb) {
+          ctx.beginPath();
+          ctx.moveTo(na.x * scale, na.y * scale);
+          ctx.lineTo(nb.x * scale, nb.y * scale);
+          ctx.stroke();
+        }
+      }
+      ctx.setLineDash([]);
+    }
+  });
+
+  // Nodes
+  nodes.forEach(n => {
+    ctx.beginPath();
+    ctx.arc(n.x * scale, n.y * scale, 14, 0, Math.PI * 2);
+    ctx.fillStyle = n.color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 11px -apple-system';
+    ctx.textAlign = 'center';
+    ctx.fillText(n.name, n.x * scale, n.y * scale + 28);
+  });
+}
+
+function updateMessages() {
+  messagesEl.innerHTML = '';
+  const list = Object.values(messages).sort((a,b) => b.created_at - a.created_at || 0);
+  if (list.length === 0) {
+    messagesEl.innerHTML = '<div style="text-align:center;color:#8e8e93;padding:20px">No messages yet.<br>Send across the mesh.</div>';
+    return;
+  }
+  list.forEach(m => {
+    const card = document.createElement('div');
+    card.className = 'msg-card';
+    const statusClass = m.status === 'delivered' ? 'status-delivered' : 
+                        m.status === 'reassembled' ? 'status-transit' : 'status-sending';
+    const honest = m.status !== 'delivered' ? '<span class="honest-badge">NOT DELIVERED</span>' : '';
+    card.innerHTML = `
+      <div class="msg-header">
+        <span>${m.src} → ${m.dst}</span>
+        <span class="${statusClass}">${m.status.toUpperCase()}${honest}</span>
+      </div>
+      <div>${m.media_type}: ${m.preview || ''}</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${Math.round(m.progress*100)}%"></div></div>
+      <div style="font-size:12px;color:#8e8e93">
+        ${m.acked}/${m.total_chunks} chunks • Route: ${m.route.join(' → ') || '...'} • ETA: ${m.eta}s
+      </div>
+    `;
+    messagesEl.appendChild(card);
+  });
+}
+
+const ws = new WebSocket(`ws://${location.host}/ws`);
+ws.onmessage = (ev) => {
+  const data = JSON.parse(ev.data);
+  if (data.type === 'state') {
+    nodes = data.nodes;
+    connections = data.connections;
+    messages = data.messages;
+    draw();
+    updateMessages();
+    // Populate selects if empty
+    const src = document.getElementById('src');
+    const dst = document.getElementById('dst');
+    if (src.options.length <= 1) {
+      src.innerHTML = nodes.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
+      dst.innerHTML = nodes.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
+      if (nodes.length > 1) dst.selectedIndex = 1;
+    }
+  }
+};
+
+async function sendText() {
+  const src = document.getElementById('src').value;
+  const dst = document.getElementById('dst').value;
+  const text = document.getElementById('text').value;
+  if (!text || src === dst) return;
+  const form = new FormData();
+  form.append('src', src);
+  form.append('dst', dst);
+  form.append('text', text);
+  await fetch('/send/text', { method: 'POST', body: form });
+  document.getElementById('text').value = '';
+}
+
+document.getElementById('image').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const src = document.getElementById('src').value;
+  const dst = document.getElementById('dst').value;
+  const form = new FormData();
+  form.append('src', src);
+  form.append('dst', dst);
+  form.append('file', file);
+  await fetch('/send/image', { method: 'POST', body: form });
+};
+
+document.getElementById('voice').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const src = document.getElementById('src').value;
+  const dst = document.getElementById('dst').value;
+  const form = new FormData();
+  form.append('src', src);
+  form.append('dst', dst);
+  form.append('file', file);
+  await fetch('/send/voice', { method: 'POST', body: form });
+};
+
+// Auto refresh state occasionally
+setInterval(() => {
+  if (ws.readyState === WebSocket.OPEN) {
+    // state is pushed
+  }
+}, 1000);
+</script>
+</body>
+</html>
