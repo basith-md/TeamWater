@@ -2,6 +2,23 @@
 
 The backend is in its own directory so other services can use it independently.
 
+## Shared Types (OpenAPI)
+
+**Single source of truth:** `openapi.yaml`
+
+Generated types live in:
+- `shared/python/models.py` (Pydantic)
+- `shared/typescript/api.ts`
+
+**GUARD: Do not edit the generated files.**  
+Agents and teammates must only modify `openapi.yaml`, then run:
+
+```bash
+./generate-types.sh
+```
+
+See `shared/DO_NOT_EDIT.md` for the full rule.
+
 ## Architecture
 
 ```mermaid
@@ -40,11 +57,17 @@ flowchart TD
 ```
 chrp_mesh/
 ├── backend/
-│   └── mesh_backend.py     # Pure mesh engine (import this)
+│   └── mesh_backend.py
 ├── service/
-│   ├── service.py          # FastAPI + WebSocket service
+│   ├── service.py
 │   └── static/
-│       └── index.html      # Demo UI
+│       └── index.html
+├── shared/
+│   ├── DO_NOT_EDIT.md
+│   ├── python/models.py      # generated
+│   └── typescript/api.ts     # generated
+├── openapi.yaml              # source of truth
+├── generate-types.sh
 ├── requirements.txt
 └── README.md
 ```
