@@ -2,6 +2,9 @@
 
 The Expo mobile app and browser packet console are documented in [FRONTEND.md](FRONTEND.md). Run `npm ci` and `npm run dev` from this repo root to open the interactive three-panel demo at http://localhost:5173.
 
+**Live Demo:** [https://zippy-ivory-8b5yt2y.vercel.app/](https://zippy-ivory-8b5yt2y.vercel.app/)  
+(Static frontend of the iPhone-style mesh UI. The full FastAPI + WebSocket backend runs separately.)
+
 The backend is in its own directory so other services can use it independently.
 
 ## Shared Types (OpenAPI)
