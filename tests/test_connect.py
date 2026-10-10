@@ -433,3 +433,21 @@ class GroundingVocabularyTests(unittest.TestCase):
         self.assertEqual(tokens("What does FAILED mean?"), {"failed"})
         self.assertTrue(any("FAILED" in h["text"] for h in kb.search("What does FAILED mean?")))
         self.assertEqual(kb.search("how do I bake bread"), [])
+
+
+class PhoneModuleVectorTests(unittest.TestCase):
+    """shippable/water-ai is tested against test-vectors.json; this keeps that file honest."""
+
+    def test_committed_vectors_match_the_server_wire_format(self):
+        import json
+        from connect import vectors
+        committed = json.loads(vectors.OUT.read_text(encoding="utf-8"))
+        self.assertEqual(committed, vectors.build(), "Wire format changed: run `python -m connect.vectors` and update the phone module")
+
+    def test_server_opens_what_the_vectors_say_a_phone_sends(self):
+        import json
+        from connect import vectors
+        v = json.loads(vectors.OUT.read_text(encoding="utf-8"))
+        frame = bytes.fromhex(v["request_frame_hex"])
+        plain = security.unseal(bytes.fromhex(v["key_hex"]), v["request_id"], v["device_id"], frame[20:], b"Q")
+        self.assertEqual((plain[0], plain[1:].decode()), (v["model_index"], v["question"]))

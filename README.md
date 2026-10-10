@@ -9,6 +9,10 @@ The Expo mobile app and browser packet console are documented in [FRONTEND.md](F
 
 The backend is in its own directory so other services can use it independently.
 
+## Shippable phone module
+
+[`shippable/`](shippable/) holds the code meant for real phones: [`shippable/water-ai`](shippable/water-ai/) is the phone side of Water AI (setup, sealed questions over the mesh, gateway relay), byte-compatible with Water Connect in [`connect/`](connect/). Start with [`shippable/README.md`](shippable/README.md).
+
 ## Shared Types (OpenAPI)
 
 **Single source of truth:** `openapi.yaml`

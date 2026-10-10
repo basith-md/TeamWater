@@ -1,6 +1,6 @@
 {
   "name": "teamwater", "version": "0.1.0", "private": true, "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": ["apps/*", "packages/*", "shippable/*"],
   "scripts": {
     "dev": "npm run dev --workspace @teamwater/console",
     "serve": "npm run build --workspace @teamwater/console && env -u PYTHONPATH .venv/bin/uvicorn service.service:app --host 0.0.0.0 --port 8000",
