@@ -154,7 +154,7 @@ async def send_voice(
     src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)
 ):
     media = await read_and_encode(file, encode_voice)
-    return await submit_media(src, dst, media, "Opus voice (first 5 seconds maximum)")
+    return await submit_media(src, dst, media, "Codec2 voice (first 5 seconds maximum)")
 
 
 @app.post("/send/video")
@@ -217,7 +217,7 @@ async def received_content(msg_id: str):
         raise HTTPException(409, "Receiver has not verified complete content")
     return Response(
         render_media(media),
-        media_type=media.metadata["mime"],
+        media_type=media.metadata.get("playback_mime", media.metadata["mime"]),
         headers={"X-Content-Type-Options": "nosniff"},
     )
 
