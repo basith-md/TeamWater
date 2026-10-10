@@ -12,6 +12,8 @@ export interface PhoneChatProps {
   endpoints?: { src: string; dst: string; self?: string; contact?: string };
   conversation?: 'playa' | 'work';
   initialDraft?: string;
+  demoDraft?: string;
+  disabled?: boolean;
   embedded?: boolean;
   compact?: boolean;
   showIdentity?: boolean;
@@ -42,11 +44,12 @@ export function PhoneIdentity({ role, conversation = 'work', endpoints }: Pick<P
     </View>;
 }
 
-export function PhoneChat({ client, role, endpoints, conversation = 'work', initialDraft = '', embedded = false, compact = false, showIdentity = true, showConversationHeader = true, onComposerFocusChange, pickMedia, renderAudio, renderVoiceRecorder }: PhoneChatProps) {
+export function PhoneChat({ client, role, endpoints, conversation = 'work', initialDraft = '', demoDraft, disabled = false, embedded = false, compact = false, showIdentity = true, showConversationHeader = true, onComposerFocusChange, pickMedia, renderAudio, renderVoiceRecorder }: PhoneChatProps) {
   const { fontScale } = useWindowDimensions();
   const inputScale = Number.isFinite(fontScale) && fontScale > 1 ? fontScale : 1;
   const state = useSyncExternalStore(client.subscribe.bind(client), client.getSnapshot.bind(client), client.getSnapshot.bind(client));
   const [draft, setDraft] = useState(initialDraft);
+  useLayoutEffect(() => { if (demoDraft !== undefined) setDraft(demoDraft); }, [demoDraft]);
   const [contentHeight, setContentHeight] = useState(0);
   const inputRef = useRef<TextInput>(null);
   const inputMinHeight = Math.ceil(40 * inputScale + 16);
@@ -85,7 +88,7 @@ export function PhoneChat({ client, role, endpoints, conversation = 'work', init
 
   async function send() {
     const sentDraft = draft;
-    if (busy || !sentDraft.trim()) return;
+    if (disabled || busy || !sentDraft.trim()) return;
     setBusy(true); setError(null);
     try {
       await client.sendText(src, dst, sentDraft.trim());
@@ -95,7 +98,7 @@ export function PhoneChat({ client, role, endpoints, conversation = 'work', init
   }
 
   async function attach(kind: 'image' | 'voice') {
-    if (busy) return;
+    if (disabled || busy) return;
     setError(null);
     if (!pickMedia) { setError('File selection is unavailable in this view. Open the Expo app to attach an image or audio file.'); return; }
     setBusy(true);
@@ -108,7 +111,7 @@ export function PhoneChat({ client, role, endpoints, conversation = 'work', init
 
   async function sendRecordedVoice(asset: MediaAsset) {
     if (!mounted.current || sessionRef.current !== session || state.mode !== 'live') throw new Error('Connection changed. Record a new voice message.');
-    if (busy) throw new Error('Another message is sending. Please try again.');
+    if (disabled || busy) throw new Error('Another message is sending. Please try again.');
     setBusy(true); setError(null);
     try {
       await client.sendMedia(src, dst, 'voice', asset);
@@ -125,14 +128,14 @@ export function PhoneChat({ client, role, endpoints, conversation = 'work', init
     {showConversationHeader && !compact && <View style={styles.modeRow}><Text style={styles.modeLabel}>{state.mode === 'replay' ? 'Sample replay · example messages' : 'Live simulation'}</Text><Text style={styles.connection}>{state.connection === 'connected' ? 'Connected' : state.connection === 'connecting' ? 'Connecting…' : 'Offline'}</Text></View>}
     <ScrollView ref={list} style={styles.messages} contentContainerStyle={[styles.messageContent, compact && styles.compactMessageContent]} onLayout={() => list.current?.scrollToEnd({ animated: false })} onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
       {!compact && <View style={styles.dayRow}><View style={styles.dayLine}/><Text style={styles.day}>OFF THE GRID. STILL IN SYNC.</Text><View style={styles.dayLine}/></View>}
-      {messages.length === 0 && <View style={[styles.empty, compact && styles.compactEmpty]}><Text style={styles.emptyText}>{emptyText}</Text>{role === 'boss' && <Pressable accessibilityRole="button" accessibilityLabel="Use conversation starter" style={styles.starter} onPress={() => setDraft(starter)}><Text style={styles.starterText}>Use conversation starter ↗</Text></Pressable>}</View>}
+      {messages.length === 0 && <View style={[styles.empty, compact && styles.compactEmpty]}><Text style={styles.emptyText}>{emptyText}</Text>{role === 'boss' && <Pressable accessibilityRole="button" accessibilityLabel="Use conversation starter" disabled={disabled || busy} style={styles.starter} onPress={() => setDraft(starter)}><Text style={styles.starterText}>Use conversation starter ↗</Text></Pressable>}</View>}
       {messages.map(message => <MessageBubble key={message.id} message={message} outgoing={message.src === src} mode={state.mode} sender={message.src === src ? identity.name : identity.contact} renderAudio={renderAudio} />)}
     </ScrollView>
     {(error || state.error) && <View accessibilityRole="alert" style={styles.error}><Text style={styles.errorText}>{error || state.error}</Text></View>}
     <View style={[styles.composeArea, compact && styles.compactComposeArea]}>
-      {state.mode === 'live' && renderVoiceRecorder && <View key={session.key}>{renderVoiceRecorder({ onSend: sendRecordedVoice, disabled: busy })}</View>}
-      <View style={styles.compose}><TextInput ref={inputRef} accessibilityLabel="Message input" placeholder={`Message ${identity.contact}…`} placeholderTextColor="#8d8982" value={draft} onChangeText={text => { setDraft(text); if (!text) setContentHeight(0); }} onContentSizeChange={event => setContentHeight(event.nativeEvent.contentSize.height)} onFocus={() => { onComposerFocusChange?.(true); list.current?.scrollToEnd({ animated: false }); }} onBlur={() => onComposerFocusChange?.(false)} multiline numberOfLines={2} textAlignVertical="top" maxLength={8000} scrollEnabled style={[styles.input, { height: inputHeight, minHeight: inputMinHeight, maxHeight: inputMaxHeight }]}/><Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={busy || !draft.trim()} onPress={send} style={[styles.send, (busy || !draft.trim()) && styles.disabled]}>{busy ? <ActivityIndicator color="#fff" size="small"/> : <Text style={styles.sendArrow}>↑</Text>}</Pressable></View>
-      <View style={styles.composeFooter}><View style={styles.attachments}><Pressable accessibilityRole="button" accessibilityLabel="Attach image" disabled={busy} onPress={() => attach('image')} style={styles.attachment}><Text style={styles.attachmentText}>▧ Image</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Attach voice file" disabled={busy} onPress={() => attach('voice')} style={styles.attachment}><Text style={styles.attachmentText}>≋ Audio file</Text></Pressable></View>{!compact && <Text accessibilityLabel={state.mode === 'replay' ? 'Voice recording requires Live mode' : renderVoiceRecorder ? undefined : 'Voice recording unavailable in this view'} style={styles.composeHint}>{state.mode === 'replay' ? 'VOICE: LIVE ONLY' : renderVoiceRecorder ? 'STORE · FORWARD' : 'RECORDER UNAVAILABLE'}</Text>}</View>
+      {state.mode === 'live' && renderVoiceRecorder && <View key={session.key}>{renderVoiceRecorder({ onSend: sendRecordedVoice, disabled: disabled || busy })}</View>}
+      <View style={styles.compose}><TextInput ref={inputRef} accessibilityLabel="Message input" placeholder={`Message ${identity.contact}…`} placeholderTextColor="#8d8982" value={draft} editable={!disabled} onChangeText={text => { if (disabled) return; setDraft(text); if (!text) setContentHeight(0); }} onContentSizeChange={event => setContentHeight(event.nativeEvent.contentSize.height)} onFocus={() => { onComposerFocusChange?.(true); list.current?.scrollToEnd({ animated: false }); }} onBlur={() => onComposerFocusChange?.(false)} multiline numberOfLines={2} textAlignVertical="top" maxLength={8000} scrollEnabled style={[styles.input, { height: inputHeight, minHeight: inputMinHeight, maxHeight: inputMaxHeight }]}/><Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={disabled || busy || !draft.trim()} onPress={send} style={[styles.send, (disabled || busy || !draft.trim()) && styles.disabled]}>{busy ? <ActivityIndicator color="#fff" size="small"/> : <Text style={styles.sendArrow}>↑</Text>}</Pressable></View>
+      <View style={styles.composeFooter}><View style={styles.attachments}><Pressable accessibilityRole="button" accessibilityLabel="Attach image" disabled={disabled || busy} onPress={() => attach('image')} style={styles.attachment}><Text style={styles.attachmentText}>▧ Image</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Attach voice file" disabled={disabled || busy} onPress={() => attach('voice')} style={styles.attachment}><Text style={styles.attachmentText}>≋ Audio file</Text></Pressable></View>{!compact && <Text accessibilityLabel={state.mode === 'replay' ? 'Voice recording requires Live mode' : renderVoiceRecorder ? undefined : 'Voice recording unavailable in this view'} style={styles.composeHint}>{state.mode === 'replay' ? 'VOICE: LIVE ONLY' : renderVoiceRecorder ? 'STORE · FORWARD' : 'RECORDER UNAVAILABLE'}</Text>}</View>
     </View>
   </View>;
 }

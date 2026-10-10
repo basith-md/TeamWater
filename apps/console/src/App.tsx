@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Radio, RotateCcw, Settings2, ShieldCheck, Signal, Waves, X } from 'lucide-react';
+import { Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Play, Radio, RotateCcw, Settings2, ShieldCheck, Signal, Waves, X } from 'lucide-react';
 import { deliveryLabel, deriveTelemetry, useMesh } from '@teamwater/core';
 import type { MeshClient, MeshEvent, MeshMessage, MeshState } from '@teamwater/core';
 import { PhoneChat, PhoneIdentity } from '@teamwater/mobile-ui';
@@ -7,6 +7,7 @@ import { pickBrowserMedia } from './browserMedia';
 import { VerifiedAudio } from './VerifiedAudio';
 import { liveTransmission, useTracePlayback } from './useTracePlayback';
 import { VoiceRecorder } from './VoiceRecorder';
+import { useDemoPlayback } from './useDemoPlayback';
 import './styles.css';
 
 const eventLabels: Record<MeshEvent['kind'], string> = {
@@ -20,9 +21,10 @@ const playaNodeLabels: Record<string, string> = {
 };
 const camper = (id: string) => (playaNodeLabels[id] ?? id).split(' · ')[0];
 
-function PairPicker({ nodes, a, b, setA, setB, status }: { nodes: { id: string }[]; a: string; b: string; setA: (id: string) => void; setB: (id: string) => void; status: React.ReactNode }) {
+function PairPicker({ nodes, a, b, setA, setB, status, disabled = false }: { nodes: { id: string }[]; a: string; b: string; setA: (id: string) => void; setB: (id: string) => void; status: React.ReactNode; disabled?: boolean }) {
   const [open, setOpen] = useState<'left' | 'right' | null>(null);
   const wrapper = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (disabled) setOpen(null); }, [disabled]);
   const close = (restore = false) => {
     if (restore && open) wrapper.current?.querySelector<HTMLButtonElement>(`[data-side="${open}"]`)?.focus();
     setOpen(null);
@@ -37,6 +39,7 @@ function PairPicker({ nodes, a, b, setA, setB, status }: { nodes: { id: string }
   const picker = (side: 'left' | 'right', value: string, other: string, select: (id: string) => void) => {
     const label = `${side === 'left' ? 'Left' : 'Right'} phone node`;
     return <div className="phone-node-picker" onKeyDown={event => {
+      if (disabled) return;
       if (event.key === 'Escape') { event.preventDefault(); close(true); }
       if (event.key === 'Tab') close();
       if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
@@ -49,8 +52,8 @@ function PairPicker({ nodes, a, b, setA, setB, status }: { nodes: { id: string }
       }
     }}>
       <span className="phone-picker-label">{side === 'left' ? 'Left' : 'Right'} phone</span>
-      <button type="button" role="combobox" aria-label={label} aria-haspopup="listbox" aria-expanded={open === side} aria-controls={`${side}-phone-options`} data-side={side} onClick={() => setOpen(open === side ? null : side)}>{camper(value)} ({value}) <span aria-hidden="true">⌄</span></button>
-      {open === side && <div className="phone-node-options" id={`${side}-phone-options`} role="listbox" aria-label={`${label} options`}>{nodes.map(node => <button type="button" key={node.id} role="option" aria-selected={node.id === value} disabled={node.id === other} onClick={() => { select(node.id); close(true); }}>{camper(node.id)} ({node.id})</button>)}</div>}
+      <button type="button" role="combobox" disabled={disabled} aria-label={label} aria-haspopup="listbox" aria-expanded={open === side} aria-controls={`${side}-phone-options`} data-side={side} onClick={() => setOpen(open === side ? null : side)}>{camper(value)} ({value}) <span aria-hidden="true">⌄</span></button>
+      {open === side && <div className="phone-node-options" id={`${side}-phone-options`} role="listbox" aria-label={`${label} options`}>{nodes.map(node => <button type="button" key={node.id} role="option" aria-selected={node.id === value} disabled={disabled || node.id === other} onClick={() => { select(node.id); close(true); }}>{camper(node.id)} ({node.id})</button>)}</div>}
     </div>;
   };
   return <div ref={wrapper} className="pair-bar" role="group" aria-label="Choose phones">
@@ -199,6 +202,7 @@ function RouteProofPanel({ message, distanceAware }: { message?: MeshMessage; di
 
 export function App({ client }: { client: MeshClient }) {
   const state = useMesh(client);
+  const demo = useDemoPlayback(client);
   const [routingError, setRoutingError] = useState<string | null>(null);
   const distanceAware = !!state.routing?.distanceAware;
   async function toggleDistance() {
@@ -220,6 +224,7 @@ export function App({ client }: { client: MeshClient }) {
   const [resetError, setResetError] = useState<string | null>(null);
   async function resetConversation() {
     if (resetting || !client.resetConversation) return;
+    demo.cancel();
     setResetting(true); setResetError(null);
     try {
       await client.resetConversation();
@@ -261,23 +266,24 @@ export function App({ client }: { client: MeshClient }) {
     <header className="topbar">
       <a href="#overview" className="brand" aria-label="Water Connect overview"><Waves size={26} strokeWidth={2.2}/><span>Water Connect</span></a>
       <nav aria-label="Main navigation"><a className="active" href="#overview">Overview</a><a href="#packet-ledger">Packet ledger</a></nav>
-      <div className="topbar-right"><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span><button className="reset-demo-button" aria-label="Reset demo" disabled={resetting || !client.resetConversation} onClick={resetConversation}><RotateCcw size={14}/>{resetting ? 'Resetting…' : 'Reset demo'}</button><button className="icon-button" aria-label="Connection settings" onClick={() => { setEndpoint(state.endpoint); setSettingsOpen(true); }}><Settings2 size={18}/></button></div>
+      <div className="topbar-right"><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span><button className="reset-demo-button" aria-label="Play demo" disabled={resetting || demo.playing || !client.resetConversation || state.mode !== 'live'} onClick={() => { setResetError(null); setSettingsOpen(false); void demo.start(() => { setLeftId('node0'); setRightId('node4'); setSelectedId(null); setConversationVersion(version => version + 1); }); }}><Play size={14}/>{demo.playing ? 'Playing…' : 'Play demo'}</button><button className="reset-demo-button" aria-label="Reset demo" disabled={resetting || demo.playing && demo.stage === 'Resetting the conversation…' || !client.resetConversation} onClick={resetConversation}><RotateCcw size={14}/>{resetting ? 'Resetting…' : 'Reset demo'}</button><button className="icon-button" aria-label="Connection settings" disabled={demo.playing || resetting} onClick={() => { setEndpoint(state.endpoint); setSettingsOpen(true); }}><Settings2 size={18}/></button></div>
     </header>
 
     <main id="overview">
       <div className="page-heading"><div><h1>Message Your People At Burning Man Without Cell Service</h1><p>Malcome is at Mayan Warrior in deep playa. Basith is at the playa airport. Watch their messages hop through the local mesh.</p></div></div>
-      {(resetError ?? state.error) && <div className="error-banner" role="alert">{resetError ?? state.error}</div>}
-      <PairPicker nodes={state.nodes.length ? state.nodes : [{ id: 'node0' }, { id: 'node4' }]} a={leftId} b={rightId} setA={setLeftId} setB={setRightId} status={<div className="pair-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div>}/>
+      {(demo.error ?? resetError ?? state.error) && <div className="error-banner" role="alert">{demo.error ?? resetError ?? state.error}</div>}
+      {demo.stage && <div role="status" aria-label="Demo playback">{demo.stage}</div>}
+      <PairPicker disabled={demo.playing || resetting} nodes={state.nodes.length ? state.nodes : [{ id: 'node0' }, { id: 'node4' }]} a={leftId} b={rightId} setA={setLeftId} setB={setRightId} status={<div className="pair-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div>}/>
       <div className="demo-stage">
-        <aside className="phone-column boss-phone" aria-label={`${camper(leftId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(leftId)} profile`}><PhoneIdentity role="boss" conversation="playa" endpoints={left}/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat key={`left:${leftId}:${rightId}:${conversationVersion}`} client={client} role="boss" endpoints={left} conversation="playa" showIdentity={false} showConversationHeader={false} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Mayan Warrior · Deep playa' : playaNodeLabels[leftId] ?? leftId}</div></aside>
+        <aside className="phone-column boss-phone" aria-label={`${camper(leftId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(leftId)} profile`}><PhoneIdentity role="boss" conversation="playa" endpoints={left}/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat key={`left:${leftId}:${rightId}:${conversationVersion}`} client={client} role="boss" endpoints={left} conversation="playa" demoDraft={demo.drafts.left} disabled={demo.playing || resetting} showIdentity={false} showConversationHeader={false} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Mayan Warrior · Deep playa' : playaNodeLabels[leftId] ?? leftId}</div></aside>
 
         <section className="console-column" aria-label="Network console">
           <div className="network-conversation"><div className="network-conversation-title"><h2>{camper(leftId)} → {camper(rightId)}</h2><span className="network-mesh-badge"><i/>MESH</span></div></div>
 
-          <section className="topology-panel"><div className="panel-heading"><div><h2>Network</h2></div><button className={`distance-toggle ${distanceAware ? 'on' : ''}`} role="switch" aria-checked={distanceAware} aria-label="Distance-aware routing" onClick={toggleDistance}><i/>Distances &amp; best route</button><span className="nodes-status"><i/>{state.nodes.filter(node => node.online).length} / {state.nodes.length} nodes online</span></div>
+          <section className="topology-panel"><div className="panel-heading"><div><h2>Network</h2></div><button className={`distance-toggle ${distanceAware ? 'on' : ''}`} role="switch" disabled={demo.playing || resetting} aria-checked={distanceAware} aria-label="Distance-aware routing" onClick={toggleDistance}><i/>Distances &amp; best route</button><span className="nodes-status"><i/>{state.nodes.filter(node => node.online).length} / {state.nodes.length} nodes online</span></div>
             <LastMessage message={selected}/>
             {routingError && <div className="error-banner" role="alert">{routingError}</div>}
-            <Topology state={state} message={selected} events={events} onMove={client.moveNode ? moveNode : undefined}/>
+            <Topology state={state} message={selected} events={events} onMove={client.moveNode && !demo.playing && !resetting ? moveNode : undefined}/>
             <div className="route-detail"><div><span className="small-label">SELECTED ROUTE</span><div className="route-path" aria-label="Selected route">{selected ? (selected.route.length ? selected.route.join(' → ') : 'Route unavailable') : 'Send a message to trace its route'}</div></div><div className={`route-status ${verified ? 'verified' : ''}`}>{verified ? <ShieldCheck size={15}/> : <Activity size={15}/>}<span>{selected ? deliveryLabel(selected) : 'Ready when you are'}</span></div></div>
           <RouteProofPanel message={selected} distanceAware={distanceAware}/>
           </section>
@@ -290,7 +296,7 @@ export function App({ client }: { client: MeshClient }) {
           </section>
         </section>
 
-        <aside className="phone-column employee-phone" aria-label={`${camper(rightId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(rightId)} profile`}><PhoneIdentity role="employee" conversation="playa" endpoints={right}/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat key={`right:${rightId}:${leftId}:${conversationVersion}`} client={client} role="employee" endpoints={right} conversation="playa" showIdentity={false} showConversationHeader={false} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Playa airport' : playaNodeLabels[rightId] ?? rightId}</div></aside>
+        <aside className="phone-column employee-phone" aria-label={`${camper(rightId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(rightId)} profile`}><PhoneIdentity role="employee" conversation="playa" endpoints={right}/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat key={`right:${rightId}:${leftId}:${conversationVersion}`} client={client} role="employee" endpoints={right} conversation="playa" demoDraft={demo.drafts.right} disabled={demo.playing || resetting} showIdentity={false} showConversationHeader={false} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Playa airport' : playaNodeLabels[rightId] ?? rightId}</div></aside>
       </div>
       <footer className="page-footer"><span><Waves size={14}/> Water Connect mesh simulator</span><span>Water Connect</span></footer>
     </main>

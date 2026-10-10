@@ -33,6 +33,19 @@ come from backend simulation time.
 
 ## Recording sequence
 
+Click **Play demo** in the top-right corner to run the invitation and reply.
+It clears the previous conversation, types into each phone one character at a
+time, and waits for verified delivery before starting the reply. The final
+conversation stays visible. **Reset demo** stops playback and clears it.
+
+For a separate live terminal ledger, double-click `scripts/packet-ledger.command`
+on macOS, or run `npm run demo:ledger` from another terminal. Place that window
+beside Chrome for the recording. It follows all six nodes through the same
+backend WebSocket and clears when Reset demo resets the simulator. It does not
+start duplicate nodes or generate additional traffic.
+
+To run the conversation manually:
+
 1. Show the names, positions, and six online nodes.
 2. Send the prepared invitation from Malcome's left phone.
 3. Show packets moving through the relays and Basith's receiver verification.
@@ -42,11 +55,11 @@ come from backend simulation time.
    audio on the receiving phone. Chrome microphone permission is required.
 
 For an automated rehearsal, run `npm run demo:record`. It uses the top-right
-**Reset demo** button to start a clean conversation, then the visible browser
-types each message at 70 ms per character,
-sends Malcome's invitation, waits for verified delivery, then types and sends
-Basith's reply. Messages contain no test timestamps. This runs the browser
-rehearsal; start Loom separately to record it.
+**Reset demo** button to start a clean conversation, then clicks **Play demo**
+and verifies the messages and multi-relay routes. Messages contain no test
+timestamps. After saving the delivery
+screenshot, the rehearsal checks Reset demo again and leaves both phones empty.
+This runs the browser rehearsal; start Loom separately to record it.
 
 Voice uses Codec2 at 1,200 bps on the simulated radio. The backend decodes the
 verified receiver bytes into mono 8 kHz WAV for browser playback. Uploaded audio

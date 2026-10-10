@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { MeshClient, MeshMessage, MeshState } from '@teamwater/core';
 import { App } from './App';
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 function message(id: string, route: string[]): MeshMessage {
   return { id, src: 'node0', dst: 'node4', kind: 'text', preview: id, text: id,
@@ -13,7 +13,7 @@ function message(id: string, route: string[]): MeshMessage {
     createdAt: 0, etaSeconds: null, integrity: 'unverified', receiptConfirmed: false };
 }
 
-function makeClient(overrides: Partial<MeshState> = {}): MeshClient {
+function makeClient(overrides: Partial<MeshState> = {}): MeshClient & { publish: (next: Partial<MeshState>) => void } {
   let state: MeshState = {
     mode: 'replay', connection: 'connected', endpoint: '/api', scenario: 'clean', error: null,
     nodes: [{ id: 'node0', name: 'Boss', x: 0, y: 0, color: '#ff632d', online: true },
@@ -26,6 +26,7 @@ function makeClient(overrides: Partial<MeshState> = {}): MeshClient {
   const listeners = new Set<() => void>();
   const update = (next: Partial<MeshState>) => { state = { ...state, ...next }; listeners.forEach(listener => listener()); };
   return {
+    publish: update,
     getSnapshot: () => state, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
     start() {}, dispose() {}, setMode: (mode, endpoint) => update({ mode, endpoint: endpoint ?? state.endpoint }),
     setScenario: scenario => update({ scenario }),
@@ -46,6 +47,95 @@ function makeClient(overrides: Partial<MeshState> = {}): MeshClient {
 }
 
 describe('mesh console', () => {
+  it('plays visible 70ms typing in both composers and waits for each verified receipt', async () => {
+    vi.useFakeTimers();
+    const invitation = 'Basith, come meet me at the Mayan Warrior set in deep playa!';
+    const reply = 'On my way from the playa airport, Malcome. See you at Mayan Warrior!';
+    const client = makeClient({ mode: 'live', messages: { old: message('old', ['node0', 'node4']) } });
+    const sent: { src: string; dst: string; text: string; id: string }[] = [];
+    client.sendText = async (src, dst, text) => {
+      const id = `demo-${sent.length + 1}`;
+      sent.push({ src, dst, text, id });
+      client.publish({ messages: { ...client.getSnapshot().messages, [id]: { ...message(id, [src, dst]), src, dst, text, preview: text, status: 'sending' } } });
+      return id;
+    };
+    render(<App client={client}/>);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Play demo' })));
+    const left = within(screen.getByTestId('phone-boss'));
+    const right = within(screen.getByTestId('phone-employee'));
+    expect(client.getSnapshot().messages.old).toBeUndefined();
+    expect(screen.getByRole('button', { name: 'Play demo' })).toBeDisabled();
+    expect(left.getByLabelText('Send message')).toHaveAttribute('aria-disabled', 'true');
+    expect(right.getByLabelText('Record voice')).toBeDisabled();
+    await act(async () => vi.advanceTimersByTimeAsync(69));
+    expect(left.getByLabelText('Message input')).toHaveValue('');
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(left.getByLabelText('Message input')).toHaveValue('B');
+    await act(async () => vi.advanceTimersByTimeAsync(70 * (invitation.length - 1)));
+    expect(sent).toEqual([{ src: 'node0', dst: 'node4', text: invitation, id: 'demo-1' }]);
+    const confirm = (id: string, receiptConfirmed: boolean) => client.publish({ messages: { ...client.getSnapshot().messages, [id]: { ...client.getSnapshot().messages[id], received: 2, acked: 2, integrity: 'verified', receiptConfirmed, status: receiptConfirmed ? 'delivered' : 'awaiting_receipt' } } });
+    act(() => confirm('demo-1', false));
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(right.getByLabelText('Message input')).toHaveValue('');
+    expect(sent).toHaveLength(1);
+    act(() => confirm('demo-1', true));
+    await act(async () => vi.advanceTimersByTimeAsync(70));
+    expect(right.getByLabelText('Message input')).toHaveValue('O');
+    await act(async () => vi.advanceTimersByTimeAsync(70 * (reply.length - 1)));
+    expect(sent[1]).toEqual({ src: 'node4', dst: 'node0', text: reply, id: 'demo-2' });
+    await act(async () => confirm('demo-2', true));
+    expect(screen.getByRole('status', { name: 'Demo playback' })).toHaveTextContent('Demo complete');
+    expect(screen.getByRole('button', { name: 'Play demo' })).toBeEnabled();
+    expect(left.getByText(invitation, { exact: true })).toBeVisible();
+    expect(right.getByText(reply, { exact: true })).toBeVisible();
+    expect(left.getByLabelText('Message input')).toHaveValue('');
+    expect(right.getByLabelText('Message input')).toHaveValue('');
+  });
+
+  it('cancels the typing rehearsal when Reset demo is pressed', async () => {
+    vi.useFakeTimers();
+    const client = makeClient({ mode: 'live' });
+    client.sendText = vi.fn(client.sendText);
+    render(<App client={client}/>);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Play demo' })));
+    await act(async () => vi.advanceTimersByTimeAsync(140));
+    expect(within(screen.getByTestId('phone-boss')).getByLabelText('Message input')).toHaveValue('Ba');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Reset demo' })));
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(client.getSnapshot().messages).toEqual({});
+    expect(within(screen.getByTestId('phone-boss')).getByLabelText('Message input')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Play demo' })).toBeEnabled();
+    expect(client.sendText).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { connection: 'disconnected' as const },
+    { mode: 'replay' as const },
+    { endpoint: 'https://other.example/api' },
+  ])('stops before sending when the active simulator changes during typing: %o', async change => {
+    vi.useFakeTimers();
+    const client = makeClient({ mode: 'live' });
+    client.sendText = vi.fn(client.sendText);
+    render(<App client={client}/>);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Play demo' })));
+    await act(async () => vi.advanceTimersByTimeAsync(140));
+    await act(async () => client.publish(change));
+    expect(screen.getByRole('alert')).toHaveTextContent('Demo stopped: Simulator connection changed');
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(client.sendText).not.toHaveBeenCalled();
+    expect(within(screen.getByTestId('phone-boss')).getByLabelText('Message input')).not.toHaveAttribute('readonly');
+  });
+
+  it('stops the demo with an actionable reset error instead of sending into the old conversation', async () => {
+    const client = makeClient({ mode: 'live' });
+    client.resetConversation = async () => { throw new Error('Simulator is unavailable'); };
+    render(<App client={client}/>);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Play demo' })));
+    expect(screen.getByRole('alert')).toHaveTextContent('Demo stopped: Simulator is unavailable');
+    expect(client.getSnapshot().messages).toEqual({});
+    expect(screen.getByRole('button', { name: 'Play demo' })).toBeEnabled();
+  });
+
   it('clears both histories, the ledger, selected route and drafts after a successful reset', async () => {
     const client = makeClient({ mode: 'live', messages: { alpha: { ...message('alpha', ['node0', 'node2', 'node4']), received: 2, integrity: 'verified' } },
       events: [{ id: 'alpha-tx', sequence: 1, at: 100, messageId: 'alpha', kind: 'packet_tx', from: 'node0', to: 'node2', packetId: 'alpha-01', bytes: 32 }] });
