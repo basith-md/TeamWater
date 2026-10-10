@@ -9,6 +9,7 @@ export interface VoiceRecorderProps {
 export interface PhoneChatProps {
   client: MeshClient;
   role: Role;
+  endpoints?: { src: string; dst: string; self?: string; contact?: string };
   conversation?: 'playa' | 'work';
   initialDraft?: string;
   embedded?: boolean;
@@ -31,9 +32,9 @@ const identities = {
   },
 };
 
-export function PhoneIdentity({ role, conversation = 'work' }: Pick<PhoneChatProps, 'role' | 'conversation'>) {
-  const identity = identities[conversation][role];
-  const { src } = roleNodes(role);
+export function PhoneIdentity({ role, conversation = 'work', endpoints }: Pick<PhoneChatProps, 'role' | 'conversation' | 'endpoints'>) {
+  const identity = { ...identities[conversation][role], ...(endpoints?.self ? { name: endpoints.self } : {}) };
+  const { src } = endpoints ?? roleNodes(role);
   return <View style={styles.identity}>
       <View style={styles.avatar}><Text style={styles.avatarText}>{identity.initial}</Text></View>
       <View style={styles.identityCopy}><Text style={styles.person}>{identity.name}<Text style={styles.role}> / {identity.title}</Text></Text><Text style={styles.location}>{identity.location}</Text></View>
@@ -41,7 +42,7 @@ export function PhoneIdentity({ role, conversation = 'work' }: Pick<PhoneChatPro
     </View>;
 }
 
-export function PhoneChat({ client, role, conversation = 'work', initialDraft = '', embedded = false, compact = false, showIdentity = true, showConversationHeader = true, onComposerFocusChange, pickMedia, renderAudio, renderVoiceRecorder }: PhoneChatProps) {
+export function PhoneChat({ client, role, endpoints, conversation = 'work', initialDraft = '', embedded = false, compact = false, showIdentity = true, showConversationHeader = true, onComposerFocusChange, pickMedia, renderAudio, renderVoiceRecorder }: PhoneChatProps) {
   const { fontScale } = useWindowDimensions();
   const inputScale = Number.isFinite(fontScale) && fontScale > 1 ? fontScale : 1;
   const state = useSyncExternalStore(client.subscribe.bind(client), client.getSnapshot.bind(client), client.getSnapshot.bind(client));
@@ -56,12 +57,12 @@ export function PhoneChat({ client, role, conversation = 'work', initialDraft = 
   useEffect(() => { setBusy(false); setError(null); }, [session]);
   const draftRef = useRef(draft); draftRef.current = draft;
   const list = useRef<ScrollView>(null);
-  const identity = identities[conversation][role];
+  const identity = { ...identities[conversation][role], ...(endpoints?.self ? { name: endpoints.self } : {}), ...(endpoints?.contact ? { contact: endpoints.contact } : {}) };
   const emptyText = conversation === 'playa'
     ? `You’re connected to ${identity.contact} through the mesh. Send a message to meet up on the playa.`
     : role === 'boss' ? 'Jordan is at Burning Man. Send a message to ask for help with the code.' : 'You’re connected to Alex through the mesh. Send a reply when you’re ready.';
   const starter = conversation === 'playa' ? 'Hey Basith — come join us at Mayan Warrior on the deep playa!' : 'Hey Jordan — I know you’re at Burning Man, but could you help fix the code when you get a signal?';
-  const { src, dst } = roleNodes(role);
+  const { src, dst } = endpoints ?? roleNodes(role);
   const messages = Object.values(state.messages).filter(message => (message.src === src && message.dst === dst) || (message.src === dst && message.dst === src)).sort((a, b) => {
     if (a.createdAt === null) return b.createdAt === null ? a.id.localeCompare(b.id) : 1;
     if (b.createdAt === null) return -1;
@@ -127,7 +128,7 @@ function MessageBubble({ message, outgoing, mode, sender, renderAudio }: { messa
   const received = Math.max(0, Math.min(chunks, message.received));
   const progress = chunks > 0 ? received / chunks : 0;
   const verified = message.integrity === 'verified';
-  const contentReady = outgoing || (mode === 'replay' ? received === chunks && chunks > 0 && verified : verified || received > 0);
+  const contentReady = outgoing || (mode === 'replay' ? received === chunks && chunks > 0 && verified : verified);
   const verifiedMedia = mode === 'live' && verified && !!message.mediaUrl;
   const statusLabel = outgoing ? deliveryLabel(message) : verified ? 'Receiver verified' : message.status === 'failed' ? 'Transfer failed' : message.status === 'cancelled' ? 'Transfer cancelled' : chunks > 0 && received === chunks ? 'Received · unverified' : 'Receiving…';
   return <View style={[styles.messageRow, outgoing && styles.outgoingRow]}>

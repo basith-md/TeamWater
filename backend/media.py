@@ -74,18 +74,32 @@ def encode_image(raw):
     )
 
 
+CODEC2_MODE = 1200
+CODEC2_RATE = 8000
+
+
+def _codec2():
+    try:
+        import pycodec2
+    except ImportError as exc:
+        raise ValueError("Voice encoding requires the pycodec2 package") from exc
+    return pycodec2.Codec2(CODEC2_MODE)
+
+
 def encode_voice(raw):
-    """Encode the first five seconds as mono 6 kbps Opus. Never truncate file bytes."""
+    """Encode the first five seconds as 1200 bps Codec2. Never truncate file bytes."""
+    import numpy as np
+
     if not raw or len(raw) > MAX_UPLOAD:
         raise ValueError("Audio must be nonempty and at most 10 MiB")
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
-        raise ValueError("Voice encoding requires FFmpeg with libopus installed")
+        raise ValueError("Voice encoding requires FFmpeg to decode the source audio")
     with tempfile.TemporaryDirectory() as directory:
-        source, output = Path(directory) / "input", Path(directory) / "voice.ogg"
+        source = Path(directory) / "input"
         source.write_bytes(raw)
         try:
-            subprocess.run(
+            pcm = subprocess.run(
                 [
                     ffmpeg,
                     "-nostdin",
@@ -104,45 +118,77 @@ def encode_voice(raw):
                     "-ac",
                     "1",
                     "-ar",
-                    "16000",
-                    "-c:a",
-                    "libopus",
-                    "-b:a",
-                    "6000",
-                    "-vbr",
-                    "on",
-                    "-application",
-                    "voip",
-                    "-frame_duration",
-                    "60",
-                    str(output),
+                    str(CODEC2_RATE),
+                    "-f",
+                    "s16le",
+                    "pipe:1",
                 ],
                 check=True,
                 capture_output=True,
                 timeout=20,
-            )
+            ).stdout
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            raise ValueError("Unable to encode audio with FFmpeg/libopus") from exc
-        encoded = output.read_bytes()
-        duration = float(_probe(output).get("format", {}).get("duration", 0))
-        if duration <= 0 or len(encoded) > 8192:
-            raise ValueError("Audio could not fit the 8 KiB voice budget")
+            raise ValueError("Unable to decode audio with FFmpeg") from exc
+    samples = np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype=np.int16)
+    if samples.size == 0:
+        raise ValueError("Audio contains no samples")
+    codec = _codec2()
+    step = codec.samples_per_frame()
+    padded = np.zeros(-(-samples.size // step) * step, dtype=np.int16)
+    padded[: samples.size] = samples
+    encoded = b"".join(
+        bytes(codec.encode(padded[i : i + step])) for i in range(0, padded.size, step)
+    )
+    duration = samples.size / CODEC2_RATE
     return EncodedMedia(
         encoded,
         {
             "media_type": "voice",
-            "codec": "opus",
-            "mime": "audio/ogg",
+            "codec": "codec2",
+            "codec2_mode": CODEC2_MODE,
+            "sample_rate": CODEC2_RATE,
+            "sample_count": int(samples.size),
+            "mime": "audio/codec2",
+            "playback_mime": "audio/wav",
             "original_bytes": len(raw),
-            "target_bitrate_bps": 6000,
+            "target_bitrate_bps": CODEC2_MODE,
             "clip_limit_seconds": 5,
             "clip_policy": "first 5 seconds maximum",
             "duration_seconds": duration,
             "byte_budget": 8192,
             "encoded_bitrate_bps": round(len(encoded) * 8 / duration),
-            "quality_label": "Lossy mono Opus; first 5 seconds maximum",
+            "quality_label": "Codec2 1200 bps narrowband speech; first 5 seconds maximum",
         },
     )
+
+
+def decode_voice(media):
+    """Rebuild playable 16-bit mono WAV from received Codec2 frames (receiver side)."""
+    import numpy as np
+    import wave
+
+    meta = media.metadata
+    if meta.get("codec") != "codec2":
+        raise ValueError("Not a Codec2 voice message")
+    import pycodec2
+
+    codec = pycodec2.Codec2(int(meta["codec2_mode"]))
+    size = codec.bytes_per_frame()
+    if len(media.data) % size:
+        raise ValueError("Truncated Codec2 stream")
+    pcm = np.concatenate(
+        [
+            np.asarray(codec.decode(media.data[i : i + size]), dtype=np.int16)
+            for i in range(0, len(media.data), size)
+        ]
+    )[: int(meta["sample_count"])]
+    out = io.BytesIO()
+    with wave.open(out, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(int(meta["sample_rate"]))
+        wav.writeframes(pcm.tobytes())
+    return out.getvalue()
 
 
 def pack_media(media):
@@ -190,6 +236,8 @@ def render_media(media):
             raise ValueError("Invalid or oversized compressed text")
         data.decode("utf-8")
         return data
+    if media.metadata["codec"] == "codec2":
+        return decode_voice(media)
     return media.data
 
 

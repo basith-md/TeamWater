@@ -10,6 +10,7 @@ import uuid
 from dataclasses import replace
 
 from backend.media import (
+    render_media,
     encode_image,
     encode_voice,
     encode_video,
@@ -211,6 +212,20 @@ class MediaAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(m.route) - 1, 3)
                 self.assertGreater(m.radio_bytes, len(media.data))
 
+    def test_voice_is_codec2_and_decodes_to_wav(self):
+        import io
+        import wave
+
+        from backend.media import render_media
+
+        voice = self.media[0]
+        self.assertEqual(voice.metadata["codec"], "codec2")
+        self.assertLessEqual(voice.metadata["encoded_bitrate_bps"], 1300)
+        self.assertEqual(len(voice.data) % 6, 0)
+        with wave.open(io.BytesIO(render_media(voice))) as wav:
+            self.assertEqual(wav.getnchannels(), 1)
+            self.assertEqual(wav.getnframes(), voice.metadata["sample_count"])
+
     async def test_video_is_playable_sparse_frames_with_budget(self):
         media = self.media[2]
         self.assertLessEqual(len(media.data), 12 * 1024)
@@ -265,9 +280,16 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
             await self.service.backend.wait_message(mid)
             content = await self.client.get(f"/messages/{mid}/content")
             self.assertEqual(content.status_code, 200)
-            self.assertEqual(
-                content.content, self.service.backend.received_media[mid].data
-            )
+            received = self.service.backend.received_media[mid]
+            if kind == "voice":
+                self.assertEqual(content.headers["content-type"], "audio/wav")
+                self.assertEqual(content.content[:4], b"RIFF")
+                self.assertEqual(
+                    len(content.content),
+                    44 + 2 * received.metadata["sample_count"],
+                )
+            else:
+                self.assertEqual(content.content, received.data)
         snapshot = (await self.client.get("/state")).json()
         MeshState.model_validate(snapshot)
         self.assertTrue(

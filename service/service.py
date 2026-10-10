@@ -5,9 +5,11 @@ Other services can also import MeshBackend directly and skip this layer.
 """
 
 import asyncio
+import os
 from typing import Set
 
 import uvicorn
+from pydantic import BaseModel
 from fastapi import (
     FastAPI,
     WebSocket,
@@ -41,7 +43,7 @@ from media import (
 from shared.python.models import SimulationConfig
 
 app = FastAPI(title="CHRP Mesh Service")
-backend = MeshBackend(playback_speed=100)
+backend = MeshBackend(playback_speed=float(os.environ.get("TEAMWATER_PLAYBACK_SPEED", "2")), diverse_routes=True)
 
 # Track connected WebSocket clients
 connected_clients: Set[WebSocket] = set()
@@ -80,8 +82,29 @@ def on_backend_change():
 backend.on_state_change = on_backend_change
 
 
+CONSOLE_DIST = Path(__file__).resolve().parent.parent / "apps" / "console" / "dist"
+
+
+class StripApiPrefix:
+    """Let the console's default '/api' endpoint work when served from this process."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket") and (
+            scope["path"] == "/api" or scope["path"].startswith("/api/")
+        ):
+            path = scope["path"][4:] or "/"
+            scope = {**scope, "path": path, "raw_path": path.encode()}
+        await self.inner(scope, receive, send)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
+    built = CONSOLE_DIST / "index.html"
+    if built.exists():
+        return built.read_text()
     html_path = Path(__file__).resolve().parent / "static" / "index.html"
     return html_path.read_text()
 
@@ -154,7 +177,7 @@ async def send_voice(
     src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)
 ):
     media = await read_and_encode(file, encode_voice)
-    return await submit_media(src, dst, media, "Opus voice (first 5 seconds maximum)")
+    return await submit_media(src, dst, media, "Codec2 voice (first 5 seconds maximum)")
 
 
 @app.post("/send/video")
@@ -175,6 +198,18 @@ async def configure_simulation(config: SimulationConfig):
     return backend.get_state()["simulation"]
 
 
+class RoutingConfig(BaseModel):
+    distance_routing: bool
+
+
+@app.post("/simulation/routing")
+async def configure_routing(config: RoutingConfig):
+    if any(not task.done() for task in backend._tasks.values()):
+        raise HTTPException(409, "Wait for active transfers to finish before changing routing")
+    backend.configure(distance_routing=config.distance_routing)
+    return backend.get_state()["simulation"]
+
+
 @app.post("/simulation/reset")
 async def reset_simulation():
     global backend
@@ -185,6 +220,9 @@ async def reset_simulation():
         playback_speed=backend.playback_speed,
         radio_range=backend.radio_range,
         use_fec=backend.use_fec,
+        link_retries=backend.link_retries,
+        diverse_routes=backend.diverse_routes,
+        distance_routing=backend.distance_routing,
     )
     await backend.close()
     backend = MeshBackend(**config)
@@ -217,7 +255,7 @@ async def received_content(msg_id: str):
         raise HTTPException(409, "Receiver has not verified complete content")
     return Response(
         render_media(media),
-        media_type=media.metadata["mime"],
+        media_type=media.metadata.get("playback_mime", media.metadata["mime"]),
         headers={"X-Content-Type-Options": "nosniff"},
     )
 
@@ -247,6 +285,11 @@ app.mount(
     StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
     name="static",
 )
+
+if (CONSOLE_DIST / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=str(CONSOLE_DIST / "assets")), name="assets")
+
+app.add_middleware(StripApiPrefix)
 
 
 if __name__ == "__main__":
