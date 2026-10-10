@@ -415,6 +415,9 @@ components:
           type: integer
         control_retries:
           type: integer
+        link_retries:
+          type: integer
+          description: Per-hop retransmissions spent on this message
         frames_sent:
           type: integer
         airtime_seconds:
@@ -575,6 +578,11 @@ components:
           maximum: 500
         use_fec:
           type: boolean
+        link_retries:
+          type: integer
+          minimum: 0
+          maximum: 7
+          description: Per-hop retransmissions before a relay gives up on a frame
     Simulation:
       type: object
       required:
@@ -609,6 +617,8 @@ components:
           type: string
         fec:
           type: boolean
+        link_retries:
+          type: integer
     MediaMetadata:
       type: object
       additionalProperties: true
