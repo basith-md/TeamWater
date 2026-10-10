@@ -64,3 +64,4 @@ section,.topology-panel,.ledger-panel,.metric,.route-proof,.route-detail,.settin
 .last-empty{margin:4px 0 0;font-size:12.5px;color:#777b72}
 @media(max-width:700px){.last-message dl{grid-template-columns:repeat(2,1fr)}}
 .last-message{padding:0;border:0;background:none}.last-message .last-head{margin-bottom:0}.last-message .metrics-row{margin:8px 0 12px}
+.reset-demo-button{display:inline-flex;align-items:center;gap:6px;border:1px solid #626459;background:transparent;color:inherit;border-radius:5px;padding:7px 9px;font-size:11px;white-space:nowrap}

@@ -11,6 +11,7 @@
     "publish:preview": "npm run check:expo-go && npm run typecheck && npm test && npm run publish:preview --workspace @teamwater/mobile --",
     "typecheck": "tsc --noEmit", "build": "npm run build --workspace @teamwater/console",
     "test:e2e": "playwright test",
+    "demo:record": "TEAMWATER_PIPELINE_URL=http://127.0.0.1:8003 playwright test tests/e2e/playa.spec.ts --headed",
     "test:live": "TEAMWATER_LIVE_URL=http://127.0.0.1:8000 vitest run tests/integration/live-backend.test.ts",
     "test:pipeline": "vitest run tests/integration/pipeline-backend.test.ts"
   },

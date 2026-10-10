@@ -6,6 +6,8 @@ test('Malcome invites Basith through the live playa mesh and receives a verified
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
+  await page.getByRole('button', { name: 'Reset demo', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Selected message' })).toContainText('No message selected');
   const sender = page.getByTestId('phone-boss');
   const receiver = page.getByTestId('phone-employee');
   await expect(sender.getByPlaceholder('Message Basith…')).toBeVisible();
@@ -16,6 +18,9 @@ test('Malcome invites Basith through the live playa mesh and receives a verified
   await expect(page.getByRole('img', { name: 'Mesh network topology' })).toContainText('Shravanthi');
   await expect(page.getByRole('status', { name: 'Simulation status' })).toContainText('Live simulation');
   await expect(page.getByRole('button', { name: 'Sample replay', exact: true })).toHaveCount(0);
+  // Keep both composers empty until their turn in the recording.
+  await sender.getByLabel('Message input').fill('');
+  await receiver.getByLabel('Message input').fill('');
   const expectRealMultiRelayRoute = async (source: string, destination: string) => {
     const selectedRoute = page.getByLabel('Selected route');
     await expect.poll(async () => {
@@ -31,20 +36,21 @@ test('Malcome invites Basith through the live playa mesh and receives a verified
       expect(snapshot.connections[route[index]]).toContain(route[index + 1]);
     }
   };
-  const invitation = `Basith, come meet me at the Mayan Warrior set in deep playa! (${Date.now()})`;
-  await sender.getByLabel('Message input').fill(invitation);
+  const invitation = 'Basith, come meet me at the Mayan Warrior set in deep playa!';
+  await sender.getByLabel('Message input').pressSequentially(invitation, { delay: 70 });
   await sender.getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(page.getByTestId('trace-packet')).toBeVisible();
   await expect(receiver.getByText(invitation, { exact: true })).toBeVisible({ timeout: 90_000 });
   await expect(receiver.getByText('Receiver verified', { exact: true }).last()).toBeVisible();
   await expectRealMultiRelayRoute('node0', 'node4');
-  await expect(page.getByTestId('packet-log')).toContainText('Verified receipt');
-  const reply = `On my way from the playa airport, Malcome. See you at Mayan Warrior! (${Date.now()})`;
-  await receiver.getByLabel('Message input').fill(reply);
+  await expect(page.getByTestId('packet-log')).toContainText('Verified receipt', { timeout: 90_000 });
+  const reply = 'On my way from the playa airport, Malcome. See you at Mayan Warrior!';
+  await receiver.getByLabel('Message input').pressSequentially(reply, { delay: 70 });
   await receiver.getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(sender.getByText(reply, { exact: true })).toBeVisible({ timeout: 90_000 });
   await expect(sender.getByText('Receiver verified', { exact: true }).last()).toBeVisible();
   await expectRealMultiRelayRoute('node4', 'node0');
+  await expect(receiver.getByText('Delivered', { exact: true }).last()).toBeVisible({ timeout: 90_000 });
   for (const name of ['Bandwidth', 'Delay', 'Range', 'Packet loss']) {
     await expect(page.getByRole('group', { name, exact: true })).not.toContainText('Unavailable');
   }

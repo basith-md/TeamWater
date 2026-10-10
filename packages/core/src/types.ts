@@ -49,6 +49,7 @@ export interface MeshClient {
   setScenario(scenario: Scenario): void;
   setPlaybackSpeed(speed: number): void;
   reset(): void;
+  resetConversation?(): Promise<void>;
   setDistanceRouting?(on: boolean): Promise<void>;
   moveNode?(nodeId: string, x: number, y: number): Promise<void>;
   sendText(src: string, dst: string, text: string): Promise<string>;

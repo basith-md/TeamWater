@@ -26,6 +26,36 @@ beforeEach(() => { vi.useFakeTimers(); Socket.instances = []; vi.stubGlobal('Web
 afterEach(() => { clients.forEach(c => c.dispose()); clients = []; vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('snapshot truth', () => {
+  it('resets live conversation from the returned snapshot while preserving simulator configuration', async () => {
+    const c = client(); c.start(); Socket.instances[0].receive(wire({ status: 'in_transit' }));
+    const resetSnapshot = { ...wire(), messages: {}, events: [], simulation: { bit_rate: 1000, loss_rate: 0.2, radio_range: 180, playback_speed: 20, simulation_time: 0 }, distance_routing: true };
+    const request = vi.fn(async () => Response.json(resetSnapshot)); vi.stubGlobal('fetch', request);
+    await c.resetConversation!();
+    expect(request).toHaveBeenCalledWith('/api/simulation/reset', expect.objectContaining({ method: 'POST' }));
+    expect(c.getSnapshot().messages).toEqual({}); expect(c.getSnapshot().events).toEqual([]);
+    expect(c.getSnapshot().nodes.map(n => n.id)).toEqual(['node0', 'node4']);
+    expect(c.getSnapshot().config).toMatchObject({ bitRate: 1000, lossRate: 0.2, playbackSpeed: 20 });
+    Socket.instances[0].receive(wire());
+    expect(c.getSnapshot().messages).toEqual({});
+  });
+
+  it('keeps history when conversation reset fails and exposes the error', async () => {
+    const c = client(); c.start(); Socket.instances[0].receive(wire());
+    vi.stubGlobal('fetch', async () => Response.json({ detail: 'Reset unavailable' }, { status: 503 }));
+    await expect(c.resetConversation!()).rejects.toThrow('Reset unavailable');
+    expect(c.getSnapshot().messages.m1).toBeDefined();
+    expect(c.getSnapshot().error).toBe('Reset unavailable');
+  });
+
+  it('ignores a reset response from a superseded endpoint', async () => {
+    let respond!: (response: Response) => void;
+    vi.stubGlobal('fetch', () => new Promise<Response>(resolve => { respond = resolve; }));
+    const c = client(); c.start();
+    const pending = c.resetConversation!();
+    c.setMode('live', '/other'); respond(Response.json(wire()));
+    await expect(pending).rejects.toThrow(/Session changed/);
+    expect(c.getSnapshot().endpoint).toBe('/other'); expect(c.getSnapshot().messages).toEqual({});
+  });
   it('reports legacy delivered as ACK received, requiring integrity and a receipt for Delivered', () => {
     const c = client(); c.start(); Socket.instances[0].receive(wire());
     const message = c.getSnapshot().messages.m1;
