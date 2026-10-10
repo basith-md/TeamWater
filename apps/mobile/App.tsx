@@ -6,6 +6,7 @@ import type { MediaAsset, Mode, Role } from '@teamwater/core';
 import { PhoneChat } from '@teamwater/mobile-ui';
 import { backendUrl, initialSettings } from './src/settings';
 import { ReceivedAudio } from './src/ReceivedAudio';
+import { VoiceRecorder } from './src/VoiceRecorder';
 
 export default function App() {
   const defaults = initialSettings(null);
@@ -23,6 +24,9 @@ export default function App() {
     let mounted = true;
     function configure(url: string | null) {
       if (!url || !mounted) return;
+      // A normal Expo/browser launch URL carries no phone settings. Applying
+      // its defaults later would overwrite a role or mode the user just chose.
+      if (!/[?&](role|mode|endpoint)=/.test(url)) return;
       const next = initialSettings(url);
       setRole(next.role); setMode(next.mode); setEndpoint(next.endpoint); setEndpointDraft(next.endpoint);
     }
@@ -41,8 +45,8 @@ export default function App() {
     <StatusBar barStyle="light-content" backgroundColor="#232825"/>
     <View style={styles.top}><View><Text style={styles.brand}>TEAMWATER<Text style={styles.brandDot}>.</Text></Text><Text style={styles.tagline}>A LITTLE SIGNAL GOES A LONG WAY</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Open connection settings" onPress={() => setSettingsOpen(!settingsOpen)} style={styles.settingsButton}><Text style={styles.settingsText}>{settingsOpen ? 'Close' : 'Settings'}</Text></Pressable></View>
     <View style={styles.roleRow}><Pressable accessibilityRole="button" accessibilityLabel="Use boss phone" onPress={() => setRole('boss')} style={[styles.roleButton, role === 'boss' && styles.activeRole]}><Text style={[styles.roleText, role === 'boss' && styles.activeRoleText]}>Boss / node0</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Use employee phone" onPress={() => setRole('employee')} style={[styles.roleButton, role === 'employee' && styles.activeRole]}><Text style={[styles.roleText, role === 'employee' && styles.activeRoleText]}>Playa / node4</Text></Pressable></View>
-    {settingsOpen && <View style={styles.settings}><Text style={styles.settingLabel}>CONNECTION</Text><View style={styles.modeButtons}>{(['replay', 'live'] as Mode[]).map(value => <Pressable key={value} accessibilityRole="button" accessibilityLabel={value === 'replay' ? 'Use demo replay' : 'Use live backend'} onPress={() => setMode(value)} style={[styles.modeButton, mode === value && styles.activeMode]}><Text style={[styles.modeButtonText, mode === value && styles.activeModeText]}>{value === 'replay' ? 'Demo replay' : 'Live backend'}</Text></Pressable>)}</View><Text accessibilityLabel="Backend help" style={styles.help}>Use 127.0.0.1 for the iOS simulator. On a real phone, enter your computer’s LAN address.</Text><View style={styles.endpointRow}><TextInput accessibilityLabel="Backend URL" autoCapitalize="none" autoCorrect={false} keyboardType="url" value={endpointDraft} onChangeText={setEndpointDraft} style={styles.endpoint}/><Pressable accessibilityRole="button" accessibilityLabel="Apply backend URL" onPress={applyEndpoint} style={styles.apply}><Text style={styles.applyText}>Apply</Text></Pressable></View>{error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}<Text style={styles.help}>Replay is authored sample data. Live delivery stays unverified until the backend provides integrity and a terminal receipt.</Text></View>}
-    <PhoneChat key={role} client={client} role={role} pickMedia={pickMedia} renderAudio={uri => <ReceivedAudio key={uri} uri={uri}/>}/>
+    {settingsOpen && <View style={styles.settings}><Text style={styles.settingLabel}>CONNECTION</Text><View style={styles.modeButtons}>{(['replay', 'live'] as Mode[]).map(value => <Pressable key={value} accessibilityRole="button" accessibilityLabel={value === 'replay' ? 'Use demo replay' : 'Use live backend'} onPress={() => setMode(value)} style={[styles.modeButton, mode === value && styles.activeMode]}><Text style={[styles.modeButtonText, mode === value && styles.activeModeText]}>{value === 'replay' ? 'Sample replay' : 'Live simulation'}</Text></Pressable>)}</View><Text accessibilityLabel="Backend help" style={styles.help}>Use 127.0.0.1 for the iOS simulator. On a real phone, enter your computer’s LAN address.</Text><View style={styles.endpointRow}><TextInput accessibilityLabel="Backend URL" autoCapitalize="none" autoCorrect={false} keyboardType="url" value={endpointDraft} onChangeText={setEndpointDraft} style={styles.endpoint}/><Pressable accessibilityRole="button" accessibilityLabel="Apply backend URL" onPress={applyEndpoint} style={styles.apply}><Text style={styles.applyText}>Apply</Text></Pressable></View>{error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}<Text style={styles.help}>Live simulation runs your messages through the mesh. Sample replay shows prerecorded examples.</Text></View>}
+    <PhoneChat key={role} client={client} role={role} pickMedia={pickMedia} renderAudio={uri => <ReceivedAudio key={uri} uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>}/>
   </KeyboardAvoidingView>;
 }
 

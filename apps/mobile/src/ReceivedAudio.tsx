@@ -21,7 +21,7 @@ export function ReceivedAudio({ uri }: { uri: string }) {
 
   return <View style={styles.audio}>
     <View style={styles.row}><Pressable accessibilityRole="button" accessibilityLabel={status.playing ? 'Pause received audio' : 'Play received audio'} disabled={!status.isLoaded || !!error} onPress={toggle} style={[styles.play, (!status.isLoaded || !!error) && styles.disabled]}><Text style={styles.playText}>{status.playing ? 'Ⅱ' : '▶'}</Text></Pressable><Text style={styles.time}>{clock(status.currentTime)} / {clock(status.duration)}</Text></View>
-    {error ? <Text accessibilityRole="alert" style={styles.error}>Playback unavailable · {error}</Text> : !status.isLoaded ? <Text style={styles.note}>Loading received audio…</Text> : <Text style={styles.note}>Verified audio · Ogg Opus support depends on your device</Text>}
+    {error ? <Text accessibilityRole="alert" style={styles.error}>Playback unavailable · {error}</Text> : !status.isLoaded ? <Text style={styles.note}>Loading received audio…</Text> : <Text style={styles.note}>Verified voice message</Text>}
   </View>;
 }
 

@@ -10,6 +10,8 @@ export default defineConfig({
     ...devices['Desktop Chrome'],
     channel: 'chrome',
     headless: false,
+    launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
+    permissions: ['microphone'],
     baseURL: 'http://127.0.0.1:5173',
     viewport: { width: 1600, height: 1000 },
     screenshot: 'only-on-failure',

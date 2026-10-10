@@ -44,7 +44,7 @@ describe('mesh console', () => {
     expect(screen.getByText('Disconnected')).toBeInTheDocument();
   });
 
-  it('changes replay scenario and speed, and disables both in live mode', () => {
+  it('changes sample scenario and speed, and hides sample controls in live mode', () => {
     render(<App client={makeClient()} />);
     const scenario = screen.getByRole('combobox', { name: 'Replay scenario' });
     fireEvent.change(scenario, { target: { value: 'lossy' } });
@@ -52,11 +52,10 @@ describe('mesh console', () => {
     const speed = screen.getByRole('combobox', { name: 'Playback speed' });
     fireEvent.change(speed, { target: { value: '2' } });
     expect(speed).toHaveValue('2');
-    fireEvent.click(screen.getByRole('button', { name: 'Live backend' }));
-    expect(scenario).toBeDisabled();
-    expect(speed).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Reset demo' })).toBeDisabled();
-    expect(screen.getByText('Backend controls unavailable')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Live simulation' }));
+    expect(screen.queryByRole('combobox', { name: 'Replay scenario' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Playback speed' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reset demo' })).not.toBeInTheDocument();
   });
 
   it('filters route and packet events by the inspected message', () => {

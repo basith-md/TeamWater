@@ -1,11 +1,11 @@
 import type { MeshEvent, MeshLink, MeshMessage, MeshNode } from './types';
-import type { BackendMessage, BackendNode, BackendState } from './backend-types';
+import type { BackendMessage, BackendMessageStatus, BackendNode, BackendState } from './backend-types';
 
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const string = (value: unknown): value is string => typeof value === 'string';
-const statuses = ['sending', 'in_transit', 'reassembled', 'delivered', 'failed', 'awaiting_receipt', 'receipt_unconfirmed'];
-const kinds = ['text', 'image', 'voice'];
+const statuses = Object.keys({ sending: true, in_transit: true, delivered: true, failed: true, awaiting_receipt: true, receipt_unconfirmed: true, cancelled: true } satisfies Record<BackendMessageStatus, true>).concat('reassembled');
+const kinds = Object.keys({ text: true, image: true, voice: true, video: true, ai_request: true, ai_response: true } satisfies Record<BackendMessage['media_type'], true>);
 
 /** Legacy service snapshots contain aggregate progress only, never verified content. */
 export function normalizeSnapshot(value: unknown) {
@@ -43,6 +43,8 @@ export function normalizeSnapshot(value: unknown) {
       ...(finite(m.radio_bytes) && m.radio_bytes >= 0 ? { radioBytes: m.radio_bytes } : {}),
       ...(finite(m.lost_packets) && m.lost_packets >= 0 ? { lostPackets: m.lost_packets } : {}),
       ...(finite(m.retries) && m.retries >= 0 ? { retries: m.retries } : {}),
+      ...(finite(m.frames_sent) && Number.isInteger(m.frames_sent) && m.frames_sent >= 0 ? { framesSent: m.frames_sent } : {}),
+      ...(verified && finite(m.receiver_verified_at) && m.receiver_verified_at >= 0 && Number.isFinite(m.receiver_verified_at * 1000) ? { receiverVerifiedSeconds: m.receiver_verified_at } : {}),
       ...(finite(m.airtime_seconds) && m.airtime_seconds >= 0 ? { airtimeSeconds: m.airtime_seconds } : {}),
       ...(object(m.metadata) && finite(m.metadata.encoded_bytes) && m.metadata.encoded_bytes >= 0 ? { encodedBytes: m.metadata.encoded_bytes } : {}),
       ...(object(m.metadata) && finite(m.metadata.transfer_bytes) && m.metadata.transfer_bytes >= 0 ? { transferBytes: m.metadata.transfer_bytes } : {}),
@@ -68,5 +70,6 @@ export function normalizeSnapshot(value: unknown) {
     simulationTime: simulation && finite(simulation.simulation_time) ? simulation.simulation_time : null,
     bitRate: simulation && finite(simulation.bit_rate) && simulation.bit_rate > 0 ? simulation.bit_rate : null,
     lossRate: simulation && finite(simulation.loss_rate) && simulation.loss_rate >= 0 && simulation.loss_rate <= 1 ? simulation.loss_rate : null,
+    rangeMeters: simulation && finite(simulation.range_meters) && simulation.range_meters > 0 ? simulation.range_meters : null,
   };
 }

@@ -31,3 +31,21 @@ Four PhoneChat tests were written first and observed failing for the recipient s
 A further unknown-timestamp ordering test failed with the unknown message incorrectly sorted first. The comparator now puts null `createdAt` after known timestamps without fabricating a date.
 
 Final scoped rerun after the timestamp change: **24 passed** across 4 mobile files.
+
+## Native voice recording and composer
+
+Voice is the primary live composer action. Expo requests microphone permission only when Record voice is pressed, captures mono AAC in an M4A container, shows elapsed duration, and stops at five seconds using both the native duration limit and a JavaScript fallback. Stop opens a local preview with Play, Send voice, and Discard. Failed sends retain the clip for retry. Receiving verified Opus playback remains subject to the device codec support described above.
+
+The shared `VoiceRecorderProps` contract is `{ onSend: (asset: MediaAsset) => Promise<void>; disabled: boolean }`. `PhoneChat.renderVoiceRecorder` is live-only and remounts on role, mode, endpoint, or client changes. Shared transport owns source/destination routing, busy state, errors, and stale-session rejection. Replay has an unobtrusive footer explanation rather than a recording control.
+
+Recording stops on background, unmount, session replacement, and transport becoming busy. Native preparation and cleanup are serialized because the device audio mode is global; an old pending permission/preparation cannot stop a newer phone session's recording. Cleanup restores `allowsRecording: false` so preview and received playback can work on iOS. The Expo audio plugin declares a descriptive microphone permission and disables background recording/playback.
+
+TDD evidence: eight recorder tests failed against a null scaffold; two shared voice-composer tests and one App integration test failed before wiring. A subsequent pending-native-preparation cancellation regression failed with the newer microphone stopped; serialization fixed it. A disabled-during-capture regression failed before adding transport-busy cleanup. Hardware API hooks are substituted in tests; no test captures a real microphone. Native recording correctness on a physical phone still requires the parent's deployment/device walkthrough.
+
+The composer now has a comfortable bounded two-line field, top-aligned text, a compact circular send button, and concise voice availability in its footer. Settings and phone mode labels use **Live simulation** / **Sample replay** with a plain explanation. The integration test also caught a normal launch URL overwriting a freshly selected live mode; launch URLs without phone configuration parameters are now ignored.
+
+Incoming progress was independently tested on both roles: recipient messages now say **Receiving…**, **Received · unverified**, or **Transfer failed** as appropriate. Sender messages retain the core's Sending/delivery status, while verified recipients say Receiver verified. Two tests were observed failing before this change.
+
+Final regressions were observed RED for incoming cancellation and the iOS microphone permission dialog making the app temporarily inactive. Incoming cancelled transfers now say **Transfer cancelled**. Permission requests survive that temporary inactive state, while actual backgrounding still cancels capture. The failed-text-send retry test waits for the Send button to become enabled before clicking again, matching the available user action instead of racing the async busy cleanup. Healthy received playback says **Verified voice message**; real playback errors remain visible.
+
+Final mobile scoped verification: **44 passed** across 5 files (20 PhoneChat, 11 VoiceRecorder, 3 App, 3 ReceivedAudio, 7 settings). Parent owns the coordinated full suite and Expo/device verification.

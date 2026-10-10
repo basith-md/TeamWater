@@ -1,5 +1,5 @@
-import React from 'react';
-import { Text } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, Text } from 'react-native';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { MediaAsset, MeshClient, MeshMessage, MeshState, Mode } from '@teamwater/core';
@@ -53,6 +53,7 @@ describe('PhoneChat', () => {
     await screen.findByText('Relay unavailable');
     expect((screen.getByLabelText('Message input') as HTMLInputElement).value).toBe('Try this patch');
     client.failure = null;
+    await waitFor(() => expect(screen.getByLabelText('Send message').getAttribute('aria-disabled')).not.toBe('true'));
     fireEvent.click(screen.getByLabelText('Send message'));
     await waitFor(() => expect((screen.getByLabelText('Message input') as HTMLInputElement).value).toBe(''));
     expect(screen.queryByText('Relay unavailable')).toBeNull();
@@ -177,5 +178,59 @@ describe('PhoneChat', () => {
     client.publish([message({ id: 'unknown', text: 'Unknown timestamp', createdAt: null }), message({ id: 'known', text: 'Known timestamp', createdAt: 1000 })]);
     render(<PhoneChat client={client} role="boss" />);
     expect(screen.getAllByText(/^(Known|Unknown) timestamp$/).map(element => element.textContent)).toEqual(['Known timestamp', 'Unknown timestamp']);
+  });
+
+  it('sends a recorded voice asset from employee to boss through the shared transport', async () => {
+    const client = new FakeClient();
+    render(<PhoneChat client={client} role="employee" renderVoiceRecorder={({ onSend, disabled }) => <Pressable accessibilityRole="button" accessibilityLabel="Send recorded voice" disabled={disabled} onPress={() => { void onSend({ uri: 'file:///recording.m4a', name: 'recording.m4a', type: 'audio/mp4' }).catch(() => {}); }}><Text>Send recorded voice</Text></Pressable>}/>);
+    fireEvent.click(screen.getByLabelText('Send recorded voice'));
+    await screen.findByText('recording.m4a');
+    expect(client.state.messages.media.kind).toBe('voice');
+    expect(client.state.messages.media.src).toBe('node4');
+    expect(client.state.messages.media.dst).toBe('node0');
+  });
+
+  it('offers recording only in live mode and remounts recorder state after endpoint changes', () => {
+    function RecorderChoice() {
+      const [started, setStarted] = useState(false);
+      return <Pressable accessibilityRole="button" accessibilityLabel="Start test recorder" onPress={() => setStarted(true)}><Text>{started ? 'Recording choice active' : 'Recorder idle'}</Text></Pressable>;
+    }
+    const client = new FakeClient(); client.setMode('replay');
+    render(<PhoneChat client={client} role="boss" renderVoiceRecorder={() => <RecorderChoice/>}/>);
+    expect(screen.queryByText('Recorder idle')).toBeNull();
+    expect(screen.getByLabelText('Voice recording requires Live mode')).toBeTruthy();
+    act(() => client.setMode('live'));
+    fireEvent.click(screen.getByLabelText('Start test recorder'));
+    expect(screen.getByText('Recording choice active')).toBeTruthy();
+    act(() => client.setMode('live', 'http://another-host:8000'));
+    expect(screen.getByText('Recorder idle')).toBeTruthy();
+  });
+
+  it('distinguishes incoming Receiving from outgoing Sending on both phones', () => {
+    const client = new FakeClient();
+    client.publish([message({ status: 'sending', received: 0 }), message({ id: 'reply', src: 'node4', dst: 'node0', text: 'Reply coming', status: 'in_transit', received: 2 })]);
+    const view = render(<PhoneChat client={client} role="boss"/>);
+    expect(screen.getByText('Sending')).toBeTruthy();
+    expect(screen.getByText('Receiving…')).toBeTruthy();
+    view.rerender(<PhoneChat client={client} role="employee"/>);
+    expect(screen.getByText('In transit')).toBeTruthy();
+    expect(screen.getByText('Receiving…')).toBeTruthy();
+    expect(screen.queryByText('Sending')).toBeNull();
+  });
+
+  it('describes completed unverified recipient content and transfer failures honestly', () => {
+    const client = new FakeClient(); client.publish([message()]);
+    render(<PhoneChat client={client} role="employee"/>);
+    expect(screen.getByText('Received · unverified')).toBeTruthy();
+    expect(screen.queryByText('Delivered')).toBeNull();
+    act(() => client.publish([message({ status: 'failed', received: 2 })]));
+    expect(screen.getByText('Transfer failed')).toBeTruthy();
+  });
+
+  it('describes an incoming cancelled transfer without implying it is still receiving', () => {
+    const client = new FakeClient(); client.publish([message({ status: 'cancelled', received: 2 })]);
+    render(<PhoneChat client={client} role="employee"/>);
+    expect(screen.getByText('Transfer cancelled')).toBeTruthy();
+    expect(screen.queryByText('Receiving…')).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ test('a boss message crosses the trace and the employee can reply', async ({ pag
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
+  await page.getByRole('button', { name: 'Sample replay', exact: true }).click();
   const boss = page.getByTestId('phone-boss');
   const employee = page.getByTestId('phone-employee');
   await boss.getByLabel('Message input').fill('The deploy is failing. Can you fix the code from the playa?');
@@ -21,6 +22,7 @@ test('a boss message crosses the trace and the employee can reply', async ({ pag
 
 test('loss replay shows packet drop and retry before delivery', async ({ page }) => {
   await page.goto('/');
+  await page.getByRole('button', { name: 'Sample replay', exact: true }).click();
   await page.getByLabel('Replay scenario').selectOption('lossy');
   const boss = page.getByTestId('phone-boss');
   await boss.getByLabel('Message input').fill('Retry this message through the dust.');
@@ -34,6 +36,7 @@ test('loss replay shows packet drop and retry before delivery', async ({ page })
 
 test('outage replay follows an alternate route and reports it', async ({ page }) => {
   await page.goto('/');
+  await page.getByRole('button', { name: 'Sample replay', exact: true }).click();
   await page.getByLabel('Replay scenario').selectOption('outage');
   const boss = page.getByTestId('phone-boss');
   await boss.getByLabel('Message input').fill('Find another relay.');
@@ -45,6 +48,7 @@ test('outage replay follows an alternate route and reports it', async ({ page })
 test('the mobile-width stage stays within the viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Sample replay', exact: true }).click();
   await expect(page.getByTestId('phone-boss').getByLabel('Message input')).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(overflow).toBe(false);
