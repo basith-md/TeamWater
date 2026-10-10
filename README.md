@@ -30,33 +30,50 @@ See `shared/DO_NOT_EDIT.md` for the full rule.
 
 ```mermaid
 flowchart TD
-    subgraph Other Services
-        S1[Another Service]
-        S2[Future Service]
+    subgraph Clients
+        Console[Browser Console<br/>apps/console]
+        Mobile[Expo Mobile App<br/>apps/mobile]
+        Preview[Team Preview<br/>apps/team-preview]
     end
 
-    subgraph Service Layer
-        API[FastAPI Service<br/>service.py]
-        WS[WebSocket Clients]
-        UI[Demo UI<br/>index.html]
+    subgraph Shared Frontend
+        Core[packages/core<br/>HTTP / WebSocket client<br/>state + telemetry]
+        MobileUI[packages/mobile-ui<br/>Shared phone UI]
+    end
+
+    subgraph Service
+        API[FastAPI Service<br/>service/service.py]
+        WS[WebSocket /ws]
+        Static[Static Demo UI]
     end
 
     subgraph Backend
         MB[MeshBackend<br/>mesh_backend.py]
-        Nodes[Virtual Nodes]
-        Mesh[Mesh Routing<br/>+ Packet Loss]
-        Reliability[Chunking + ACKs<br/>+ Retransmits]
+        Media[Media Codecs<br/>media.py]
+        Packets[Packet Framing<br/>packets.py]
+        Reassembly[Chunk Reassembly<br/>reassembly.py]
     end
 
-    S1 -->|import MeshBackend| MB
-    S2 -->|import MeshBackend| MB
-    UI -->|HTTP / WebSocket| API
-    API -->|uses| MB
-    API -->|pushes state| WS
-    MB --> Nodes
-    MB --> Mesh
-    MB --> Reliability
-    Mesh -->|relays packets| Nodes
+    subgraph Types
+        OpenAPI[openapi.yaml<br/>source of truth]
+        SharedPy[shared/python/models.py]
+        SharedTs[shared/typescript/api.ts]
+    end
+
+    Console --> Core
+    Mobile --> MobileUI
+    Mobile --> Core
+    Preview --> Core
+    Core -->|HTTP / WS| API
+    API --> MB
+    API -->|broadcast| WS
+    MB --> Media
+    MB --> Packets
+    MB --> Reassembly
+    OpenAPI --> SharedPy
+    OpenAPI --> SharedTs
+    Core -.->|uses generated types| SharedTs
+    API -.->|uses generated types| SharedPy
 ```
 
 ## Structure
