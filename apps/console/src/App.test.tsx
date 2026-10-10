@@ -82,28 +82,18 @@ describe('mesh console', () => {
 
   it('starts the newly chosen pair with correctly addressed drafts', () => {
     render(<App client={makeClient({ mode: 'live' })}/>);
-    expect(screen.getByRole('combobox', { name: 'Left phone node' })).toHaveTextContent('Malcome');
-    expect(screen.getByRole('combobox', { name: 'Right phone node' })).toHaveTextContent('Basith');
-    fireEvent.click(screen.getByRole('combobox', { name: 'Right phone node' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Lucas (node2)' }));
+    expect(screen.getByRole('combobox', { name: 'Left phone node' })).toHaveValue('node0');
+    expect(screen.getByRole('combobox', { name: 'Right phone node' })).toHaveValue('node4');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Right phone node' }), { target: { value: 'node2' } });
     expect(within(screen.getByTestId('phone-boss')).getByRole('textbox', { name: 'Message input' })).toHaveValue('Lucas, where are you on the playa?');
     expect(within(screen.getByTestId('phone-employee')).getByRole('textbox', { name: 'Message input' })).toHaveValue('Malcome, I can hear you through the mesh!');
   });
 
-  it('anchors the phone menu to its trigger and closes on Escape or an outside press', () => {
+  it('never lets both phones pick the same node', () => {
     render(<App client={makeClient({ mode: 'live' })}/>);
-    const trigger = screen.getByRole('combobox', { name: 'Right phone node' });
-    fireEvent.click(trigger);
-    const menu = screen.getByRole('listbox', { name: 'Right phone node options' });
-    expect(menu.parentElement).toHaveClass('phone-node-picker');
-    expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    expect(within(menu).getByRole('option', { name: 'Malcome (node0)' })).toBeDisabled();
-    fireEvent.keyDown(menu, { key: 'Escape' });
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
-    fireEvent.click(trigger);
-    fireEvent.pointerDown(document.body);
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    const right = screen.getByRole('combobox', { name: 'Right phone node' });
+    expect(within(right).getByRole('option', { name: 'Malcome' })).toBeDisabled();
+    expect(within(screen.getByRole('combobox', { name: 'Left phone node' })).getByRole('option', { name: 'Basith' })).toBeDisabled();
   });
 
   it('reports route verification from proof data without inventing a Dijkstra check', () => {
@@ -119,7 +109,7 @@ describe('mesh console', () => {
     const client = makeClient();
     const nodes = client.getSnapshot().nodes;
     render(<App client={makeClient({ nodes: [...nodes, { id: 'node1', name: 'Bob', x: 60, y: 60, color: '#777', online: true }] })}/>);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Message Your People At Burning Man Without Cell Service');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Water Connect');
     const map = within(screen.getByRole('img', { name: 'Mesh network topology' }));
     for (const label of ['Malcome · Deep playa', 'Basith · Playa airport', 'Lucas · Relay', 'Shravanthi · Relay']) {
       expect(map.getByText(label, { selector: 'text' })).toBeInTheDocument();
@@ -145,8 +135,9 @@ describe('mesh console', () => {
     expect(receiverProfile).toHaveTextContent('Playa airport');
     expect(receiverProfile).toHaveTextContent('NODE4');
     expect(receiver.contains(receiverProfile)).toBe(false);
-    const network = screen.getByRole('region', { name: 'Network console' });
-    expect(within(network).getByRole('heading', { name: 'Malcome → Basith' })).toBeInTheDocument();
+    const pair = screen.getByRole('group', { name: 'Choose phones' });
+    expect(within(pair).getByLabelText('Left phone node')).toHaveValue('node0');
+    expect(within(pair).getByLabelText('Right phone node')).toHaveValue('node4');
     expect(within(phone).getByRole('textbox', { name: 'Message input' })).toHaveValue('Basith, come meet me at the Mayan Warrior set in deep playa!');
   });
 

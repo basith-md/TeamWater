@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Activity, ArrowDownLeft, ArrowUpRight, ChevronRight, CircleHelp, Radio, RotateCcw, Settings2, ShieldCheck, Signal, Waves, X } from 'lucide-react';
+import { Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Radio, RotateCcw, Settings2, ShieldCheck, Signal, Waves, X } from 'lucide-react';
 import { deliveryLabel, deriveTelemetry, useMesh } from '@teamwater/core';
 import type { MeshClient, MeshEvent, MeshMessage, MeshState } from '@teamwater/core';
 import { PhoneChat, PhoneIdentity } from '@teamwater/mobile-ui';
@@ -20,41 +20,15 @@ const playaNodeLabels: Record<string, string> = {
 };
 const camper = (id: string) => (playaNodeLabels[id] ?? id).split(' · ')[0];
 
-function PairPicker({ nodes, a, b, setA, setB }: { nodes: { id: string }[]; a: string; b: string; setA: (id: string) => void; setB: (id: string) => void }) {
-  const [open, setOpen] = useState<'left' | 'right' | null>(null);
-  const wrapper = useRef<HTMLDivElement>(null);
-  const close = (restore = false) => {
-    if (restore && open) wrapper.current?.querySelector<HTMLButtonElement>(`[data-side="${open}"]`)?.focus();
-    setOpen(null);
-  };
-  useEffect(() => {
-    if (!open) return;
-    wrapper.current?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]')?.focus();
-    const outside = (event: PointerEvent) => { if (!wrapper.current?.contains(event.target as Node)) setOpen(null); };
-    document.addEventListener('pointerdown', outside);
-    return () => document.removeEventListener('pointerdown', outside);
-  }, [open]);
-  const picker = (side: 'left' | 'right', value: string, other: string, select: (id: string) => void) => {
-    const label = `${side === 'left' ? 'Left' : 'Right'} phone node`;
-    return <div className="phone-node-picker" onKeyDown={event => {
-      if (event.key === 'Escape') { event.preventDefault(); close(true); }
-      if (event.key === 'Tab') close();
-      if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-        event.preventDefault();
-        if (open !== side) { setOpen(side); return; }
-        const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]:not(:disabled)')];
-        const index = items.indexOf(document.activeElement as HTMLButtonElement);
-        const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
-        items[next]?.focus();
-      }
-    }}>
-      <span className="phone-picker-label">{side === 'left' ? 'Left' : 'Right'} phone</span>
-      <button type="button" role="combobox" aria-label={label} aria-haspopup="listbox" aria-expanded={open === side} aria-controls={`${side}-phone-options`} data-side={side} onClick={() => setOpen(open === side ? null : side)}>{camper(value)} ({value}) <span aria-hidden="true">⌄</span></button>
-      {open === side && <div className="phone-node-options" id={`${side}-phone-options`} role="listbox" aria-label={`${label} options`}>{nodes.map(node => <button type="button" key={node.id} role="option" aria-selected={node.id === value} disabled={node.id === other} onClick={() => { select(node.id); close(true); }}>{camper(node.id)} ({node.id})</button>)}</div>}
-    </div>;
-  };
-  return <div ref={wrapper} className="pair-picker" role="group" aria-label="Choose phones">
-    {picker('left', a, b, setA)}{picker('right', b, a, setB)}
+function PairPicker({ nodes, a, b, setA, setB, status }: { nodes: { id: string }[]; a: string; b: string; setA: (id: string) => void; setB: (id: string) => void; status: React.ReactNode }) {
+  const options = (other: string) => nodes.map(n => <option key={n.id} value={n.id} disabled={n.id === other}>{camper(n.id)}</option>);
+  return <div className="pair-bar" role="group" aria-label="Choose phones">
+    <div className="pair-selects">
+      <select aria-label="Left phone node" value={a} onChange={e => setA(e.target.value)}>{options(b)}</select>
+      <ArrowRight size={16} aria-hidden="true"/>
+      <select aria-label="Right phone node" value={b} onChange={e => setB(e.target.value)}>{options(a)}</select>
+    </div>
+    {status}
   </div>;
 }
 
@@ -247,21 +221,19 @@ export function App({ client }: { client: MeshClient }) {
   const verified = selected?.integrity === 'verified' && selected.receiptConfirmed;
   return <div className="app-shell">
     <header className="topbar">
-      <a href="#overview" className="brand" aria-label="CHRP TeamWater overview"><Waves size={26} strokeWidth={2.2}/><span>CHRP<span className="brand-period">.</span></span><span className="brand-team">TeamWater</span></a>
+      <a href="#overview" className="brand" aria-label="Water Connect overview"><Waves size={26} strokeWidth={2.2}/><span>Water Connect</span></a>
       <nav aria-label="Main navigation"><a className="active" href="#overview">Overview</a><a href="#packet-ledger">Packet ledger</a></nav>
       <div className="topbar-right"><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span><button className="icon-button" aria-label="Connection settings" onClick={() => { setEndpoint(state.endpoint); setSettingsOpen(true); }}><Settings2 size={18}/></button></div>
     </header>
 
     <main id="overview">
-      <div className="page-heading"><div><h1>Message Your People At Burning Man Without Cell Service</h1><p>Malcome is at Mayan Warrior in deep playa. Basith is at the playa airport. Watch their messages hop through the local mesh.</p></div></div>
+      <h1 className="sr-only">Water Connect</h1>
       {state.error && <div className="error-banner" role="alert">{state.error}</div>}
-      <PairPicker nodes={state.nodes.length ? state.nodes : [{ id: 'node0' }, { id: 'node4' }]} a={leftId} b={rightId} setA={setLeftId} setB={setRightId}/>
+      <PairPicker nodes={state.nodes.length ? state.nodes : [{ id: 'node0' }, { id: 'node4' }]} a={leftId} b={rightId} setA={setLeftId} setB={setRightId} status={<div className="pair-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div>}/>
       <div className="demo-stage">
         <aside className="phone-column boss-phone" aria-label={`${camper(leftId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(leftId)} profile`}><PhoneIdentity role="boss" conversation="playa" endpoints={left}/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat key={`left:${leftId}:${rightId}`} client={client} role="boss" endpoints={left} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "Basith, come meet me at the Mayan Warrior set in deep playa!" : `${camper(rightId)}, where are you on the playa?`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Mayan Warrior · Deep playa' : playaNodeLabels[leftId] ?? leftId}</div></aside>
 
         <section className="console-column" aria-label="Network console">
-          <div className="network-conversation"><div className="network-conversation-title"><h2>{camper(leftId)} → {camper(rightId)}</h2><span className="network-mesh-badge"><i/>MESH</span></div><p>{isDefaultPair ? 'Playa airport' : (playaNodeLabels[rightId] ?? rightId).split(' · ')[1] ?? rightId}</p><div className="network-conversation-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div></div>
-          <div className="mode-note"><CircleHelp size={12}/>Off-grid phones in a local mesh simulation · running simulator required.</div>
 
           <section className="topology-panel"><div className="panel-heading"><div><h2>Network</h2></div><button className={`distance-toggle ${distanceAware ? 'on' : ''}`} role="switch" aria-checked={distanceAware} aria-label="Distance-aware routing" onClick={toggleDistance}><i/>Distances &amp; best route</button><span className="nodes-status"><i/>{state.nodes.filter(node => node.online).length} / {state.nodes.length} nodes online</span></div>
             <LastMessage message={selected}/>
@@ -281,7 +253,7 @@ export function App({ client }: { client: MeshClient }) {
 
         <aside className="phone-column employee-phone" aria-label={`${camper(rightId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(rightId)} profile`}><PhoneIdentity role="employee" conversation="playa" endpoints={right}/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat key={`right:${rightId}:${leftId}`} client={client} role="employee" endpoints={right} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "On my way from the playa airport. See you at Mayan Warrior!" : `${camper(leftId)}, I can hear you through the mesh!`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Playa airport' : playaNodeLabels[rightId] ?? rightId}</div></aside>
       </div>
-      <footer className="page-footer"><span><Waves size={14}/> TeamWater mesh simulator</span><span>TeamWater / CHRP </span></footer>
+      <footer className="page-footer"><span><Waves size={14}/> Water Connect mesh simulator</span><span>Water Connect</span></footer>
     </main>
     {settingsOpen && <div className="dialog-backdrop"><section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div className="dialog-heading"><h2 id="settings-title">Connection settings</h2><button className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X size={18}/></button></div><p>Use the local proxy or enter your simulator service URL.</p><form onSubmit={event => { event.preventDefault(); client.setMode('live', endpoint.trim() || '/api'); setSelectedId(null); setSettingsOpen(false); }}><label htmlFor="endpoint">Backend URL</label><input id="endpoint" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder="/api"/><p className="settings-hint">/api uses the configured local simulator proxy.</p><button className="apply-button" type="submit">Connect to live backend<ArrowUpRight size={15}/></button></form></section></div>}
   </div>;

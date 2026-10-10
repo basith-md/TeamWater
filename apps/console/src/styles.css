@@ -64,3 +64,20 @@ section,.topology-panel,.ledger-panel,.metric,.route-proof,.route-detail,.settin
 .last-empty{margin:4px 0 0;font-size:12.5px;color:#777b72}
 @media(max-width:700px){.last-message dl{grid-template-columns:repeat(2,1fr)}}
 .last-message{padding:0;border:0;background:none}.last-message .last-head{margin-bottom:0}.last-message .metrics-row{margin:8px 0 12px}
+
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.brand{letter-spacing:-.2px;font-weight:600}
+.pair-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:18px 0 14px;padding:10px 14px;background:#f7f6f2;border:1px solid var(--line);border-radius:12px}
+.pair-selects{display:flex;align-items:center;gap:10px;color:#777b72}
+.pair-bar select{font-size:14px;padding:7px 28px 7px 10px;min-width:130px;border:1px solid var(--line);border-radius:8px;background-color:#fff;color:var(--ink)}
+.pair-status{display:flex;align-items:center;gap:16px;font-size:12px;color:#777b72}
+.pair-status .connection{font-size:12px}
+.topology-panel,.ledger-panel,.metric,.route-proof,.route-detail,.settings-dialog,.last-message .metrics-row{border-radius:12px!important}
+.message-picker button,select,.distance-toggle,.error-banner{border-radius:8px!important}
+.metrics-row{overflow:hidden}
+.metrics-row .metric{border-radius:0!important}
+.last-message{margin:0;padding:14px 20px 4px}
+.last-message .last-head{margin-bottom:6px}
+.last-message .metrics-row{background:#fff}
+main{padding-top:14px}
+@media(max-width:620px){.last-message{padding:12px 12px 2px}}
