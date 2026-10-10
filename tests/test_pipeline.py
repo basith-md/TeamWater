@@ -76,26 +76,12 @@ class PacketTests(unittest.TestCase):
             wav.setframerate(16000)
             wav.writeframes(b"\x00\x00" * 16000 * 6)
         media = encode_voice(source.getvalue())
-        result = subprocess.run(
-            [
-                "ffmpeg",
-                "-v",
-                "error",
-                "-i",
-                "pipe:0",
-                "-f",
-                "s16le",
-                "-ac",
-                "1",
-                "-ar",
-                "16000",
-                "pipe:1",
-            ],
-            input=media.data,
-            capture_output=True,
-            check=True,
-        )
-        self.assertAlmostEqual(len(result.stdout) / 32000, 5, delta=0.1)
+        from backend.media import render_media
+
+        with wave.open(io.BytesIO(render_media(media))) as decoded:
+            self.assertAlmostEqual(
+                decoded.getnframes() / decoded.getframerate(), 5, delta=0.1
+            )
         self.assertLess(len(media.data), len(source.getvalue()))
         with self.assertRaises(ValueError):
             encode_voice(b"not an audio file")

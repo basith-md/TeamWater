@@ -264,7 +264,7 @@ paths:
               schema:
                 type: string
                 format: binary
-            audio/ogg:
+            audio/wav:
               schema:
                 type: string
                 format: binary

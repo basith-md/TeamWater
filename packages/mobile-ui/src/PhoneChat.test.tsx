@@ -83,7 +83,7 @@ describe('PhoneChat', () => {
 
   it('compacts optional identity chrome while keeping the conversation and composer available', () => {
     const client = new FakeClient();
-    client.publish([message({ text: 'The newest message from Alex' }), message({ id: 'reply', src: 'node4', dst: 'node0', text: 'Jordan’s reply' })]);
+    client.publish([message({ text: 'The newest message from Alex', integrity: 'verified', receiptConfirmed: true }), message({ id: 'reply', src: 'node4', dst: 'node0', text: 'Jordan’s reply' })]);
     render(<PhoneChat client={client} role="employee" compact/>);
     expect(screen.queryByText('Burning Man · Black Rock City')).toBeNull();
     expect(screen.queryByText('San Francisco, CA')).toBeNull();
@@ -144,7 +144,7 @@ describe('PhoneChat', () => {
 
   it('shows both directions for the role and hides unrelated messages', () => {
     const client = new FakeClient();
-    client.publish([message(), message({ id: 'reply', src: 'node4', dst: 'node0', text: 'I am at Burning Man', preview: 'I am at Burning Man' }), message({ id: 'other', src: 'node2', dst: 'node3', text: 'Private relay message', preview: 'Private relay message' })]);
+    client.publish([message({ integrity: 'verified', receiptConfirmed: true }), message({ id: 'reply', src: 'node4', dst: 'node0', text: 'I am at Burning Man', preview: 'I am at Burning Man' }), message({ id: 'other', src: 'node2', dst: 'node3', text: 'Private relay message', preview: 'Private relay message' })]);
     render(<PhoneChat client={client} role="employee" />);
     expect(screen.getByText('Fix the code')).toBeTruthy();
     expect(screen.getByText('I am at Burning Man')).toBeTruthy();
@@ -227,13 +227,13 @@ describe('PhoneChat', () => {
     expect(screen.queryByText('Delivered')).toBeNull();
   });
 
-  it('does not show a live recipient preview before any chunk arrives', () => {
-    const client = new FakeClient(); client.publish([message({ text: undefined, preview: 'Truncated remote preview', received: 0, status: 'sending' })]);
+  it('hides the recipient message until every chunk is received and verified', () => {
+    const client = new FakeClient(); client.publish([message({ text: undefined, preview: 'Truncated remote preview', received: 0, status: 'sending', integrity: 'unverified', receiptConfirmed: false })]);
     render(<PhoneChat client={client} role="employee" />);
     expect(screen.queryByText('Truncated remote preview')).toBeNull();
-    act(() => client.publish([message({ text: undefined, preview: 'Truncated remote preview', received: 1, status: 'in_transit' })]));
-    expect(screen.getByText('Truncated remote preview')).toBeTruthy();
-    expect(screen.getByText(/Unverified preview/)).toBeTruthy();
+    act(() => client.publish([message({ text: undefined, preview: 'Truncated remote preview', received: 3, status: 'in_transit', integrity: 'unverified', receiptConfirmed: false })]));
+    expect(screen.queryByText('Truncated remote preview')).toBeNull();
+    expect(screen.getAllByText(/Receiving/).length).toBeGreaterThan(0);
   });
 
   it('ignores an old send failure after a mode switch and lets the new session compose', async () => {

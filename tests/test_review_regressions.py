@@ -8,7 +8,7 @@ import hashlib
 import random
 import unittest
 
-from backend.packets import DATA
+from backend.packets import DATA, RECEIPT
 from backend.mesh_backend import MeshBackend
 
 # A straight chain so the only route is Alice -> Bob -> Carol -> Dave -> Frank.
@@ -119,6 +119,52 @@ class FourHopImageTests(unittest.IsolatedAsyncioTestCase):
             msg = await backend.wait_message(mid)
             runs.append((msg.radio_bytes, msg.lost_packets, msg.link_retries))
         self.assertEqual(runs[0], runs[1])
+
+
+class NodeIsolationTests(unittest.IsolatedAsyncioTestCase):
+    async def send(self, backend, size=1500):
+        mid = await backend.send_message(
+            "node0", "node5", image_bytes(5, size), "image"
+        )
+        return mid, await backend.wait_message(mid)
+
+    async def test_sender_logic_never_touches_destination_state(self):
+        import inspect
+
+        source = inspect.getsource(MeshBackend._send)
+        for forbidden in ("_runtime", "received_media", ".receivers", "Receiver"):
+            self.assertNotIn(forbidden, source)
+
+    async def test_silent_destination_is_never_reported_delivered(self):
+        backend = four_hop_mesh(loss_rate=0, max_attempts=3)
+        real = backend._runtime["node5"].handle
+        backend._runtime["node5"].handle = lambda f: (real(f), None)[1]
+        mid, msg = await self.send(backend)
+        self.assertNotEqual(msg.status, "delivered")
+
+    async def test_forged_receipt_digest_is_rejected(self):
+        from dataclasses import replace
+
+        backend = four_hop_mesh(loss_rate=0, max_attempts=3)
+        real = backend._runtime["node5"].handle
+
+        def forge(frame):
+            reply = real(frame)
+            if reply is not None and reply.kind == RECEIPT:
+                return replace(reply, payload=b"\x00" * len(reply.payload))
+            return reply
+
+        backend._runtime["node5"].handle = forge
+        mid, msg = await self.send(backend)
+        self.assertEqual(msg.status, "failed")
+        self.assertIn("digest", msg.error)
+
+    async def test_only_destination_node_holds_the_message(self):
+        backend = four_hop_mesh(loss_rate=0.2, seed=4)
+        mid, msg = await self.send(backend)
+        self.assertEqual(msg.status, "delivered")
+        holders = [n for n, r in backend._runtime.items() if mid in r.receivers]
+        self.assertEqual(holders, ["node5"])
 
 
 if __name__ == "__main__":

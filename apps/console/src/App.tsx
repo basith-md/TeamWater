@@ -16,8 +16,17 @@ const eventLabels: Record<MeshEvent['kind'], string> = {
 const connectionLabels = { connected: 'Connected', connecting: 'Connecting', disconnected: 'Disconnected', error: 'Connection error' };
 const playaNodeLabels: Record<string, string> = {
   node0: 'Malcome · Deep playa', node1: 'Shravanthi · Relay', node2: 'Lucas · Relay',
-  node4: 'Basith · Playa airport',
+  node3: 'Dave · Relay', node4: 'Basith · Playa airport', node5: 'Frank · Relay',
 };
+const camper = (id: string) => (playaNodeLabels[id] ?? id).split(' · ')[0];
+
+function PairPicker({ nodes, a, b, setA, setB }: { nodes: { id: string }[]; a: string; b: string; setA: (id: string) => void; setB: (id: string) => void }) {
+  const options = (other: string) => nodes.map(n => <option key={n.id} value={n.id} disabled={n.id === other}>{camper(n.id)} ({n.id})</option>);
+  return <div className="pair-picker" role="group" aria-label="Choose phones">
+    <label>Left phone<select aria-label="Left phone node" value={a} onChange={e => setA(e.target.value)}>{options(b)}</select></label>
+    <label>Right phone<select aria-label="Right phone node" value={b} onChange={e => setB(e.target.value)}>{options(a)}</select></label>
+  </div>;
+}
 
 function traceTime(at: number, createdAt: number | null | undefined, replay: boolean) {
   if (replay && createdAt == null) return '—';
@@ -90,8 +99,29 @@ export function Topology({ state, message, events }: { state: MeshState; message
   </div>;
 }
 
+function narrate(message: MeshMessage | undefined, events: MeshEvent[]): { title: string; body: string } {
+  if (!message) return { title: 'How this works', body: 'Send a message from either phone. Nothing reaches the other phone instantly: it is squeezed into ~230-byte radio packets, hopped across relay nodes over a slow, lossy radio, and only shown on the far phone once every chunk has arrived and its checksum matches.' };
+  const route = message.route.length ? message.route.join(' → ') : 'the mesh';
+  const drops = events.filter(e => e.kind === 'packet_dropped').length, retries = events.filter(e => e.kind === 'packet_retry').length;
+  const loss = drops || retries ? ` ${drops} packet${drops === 1 ? '' : 's'} got lost on the way and ${retries} ${retries === 1 ? 'was' : 'were'} resent.` : '';
+  if (message.status === 'failed') return { title: 'Transfer failed', body: `The mesh could not get every chunk through along ${route}. The receiving phone shows nothing because it never had the full message.${loss}` };
+  if (message.integrity === 'verified' && message.status === 'delivered') return { title: 'Delivered and verified', body: `All ${message.totalChunks} chunks arrived over ${route}. The receiver rebuilt the message, its checksum matched, and it sent a signed receipt back, so now (and only now) the phone displays it.${loss}` };
+  if (message.status === 'awaiting_receipt' || message.status === 'receipt_unconfirmed') return { title: 'Waiting for the receiver\u2019s proof', body: 'The sender has pushed out every chunk but will not say \u201cdelivered\u201d until the receiver sends back a checksum receipt. Lost receipts are retried.' };
+  return { title: 'In transit', body: `Sending ${message.totalChunks} chunks over ${route} at about 1 kbps. ${message.received}/${message.totalChunks} have reached the receiver so far. Each hop waits for an acknowledgment and resends lost packets; the far phone stays blank until all chunks are in and verified.${loss}` };
+}
+
+function Narrator({ message, events }: { message: MeshMessage | undefined; events: MeshEvent[] }) {
+  const note = narrate(message, events);
+  return <div className="narrator" role="status" aria-label="What is happening"><span className="small-label">WHAT&apos;S HAPPENING</span><strong>{note.title}</strong><p>{note.body}</p></div>;
+}
+
 export function App({ client }: { client: MeshClient }) {
   const state = useMesh(client);
+  const [leftId, setLeftId] = useState('node0');
+  const [rightId, setRightId] = useState('node4');
+  const left = { src: leftId, dst: rightId, self: camper(leftId), contact: camper(rightId) };
+  const right = { src: rightId, dst: leftId, self: camper(rightId), contact: camper(leftId) };
+  const isDefaultPair = leftId === 'node0' && rightId === 'node4';
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [endpoint, setEndpoint] = useState(state.endpoint);
@@ -133,14 +163,16 @@ export function App({ client }: { client: MeshClient }) {
     <main id="overview">
       <div className="page-heading"><div><div className="eyebrow">OFF-GRID COMMUNICATION / PLAYA MESH</div><h1>Find your people.<br className="mobile-break"/> Across the playa.</h1><p>Malcome is at Mayan Warrior in deep playa. Basith is at the playa airport. Watch their messages hop through the local mesh.</p></div></div>
       {state.error && <div className="error-banner" role="alert">{state.error}</div>}
+      <PairPicker nodes={state.nodes.length ? state.nodes : [{ id: 'node0' }, { id: 'node4' }]} a={leftId} b={rightId} setA={setLeftId} setB={setRightId}/>
       <div className="demo-stage">
-        <aside className="phone-column boss-phone" aria-label="Malcome · User 2 · Deep playa"><div className="phone-profile" role="group" aria-label="Malcome profile"><PhoneIdentity role="boss" conversation="playa"/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat client={client} role="boss" conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft="Basith, come meet me at the Mayan Warrior set in deep playa!" embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>Mayan Warrior · Deep playa</div></aside>
+        <aside className="phone-column boss-phone" aria-label={`${camper(leftId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(leftId)} profile`}><PhoneIdentity role="boss" conversation="playa" endpoints={left}/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat client={client} role="boss" endpoints={left} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "Basith, come meet me at the Mayan Warrior set in deep playa!" : `${camper(rightId)}, where are you on the playa?`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Mayan Warrior · Deep playa' : playaNodeLabels[leftId] ?? leftId}</div></aside>
 
         <section className="console-column" aria-label="Network console">
-          <div className="network-conversation"><div className="network-conversation-title"><h2>Malcome → Basith</h2><span className="network-mesh-badge"><i/>MESH</span></div><p>Playa airport</p><div className="network-conversation-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div></div>
+          <div className="network-conversation"><div className="network-conversation-title"><h2>{camper(leftId)} → {camper(rightId)}</h2><span className="network-mesh-badge"><i/>MESH</span></div><p>{isDefaultPair ? 'Playa airport' : (playaNodeLabels[rightId] ?? rightId).split(' · ')[1] ?? rightId}</p><div className="network-conversation-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div></div>
           <div className="mode-note"><CircleHelp size={12}/>Off-grid phones in a local mesh simulation · running simulator required.</div>
 
           <section className="topology-panel"><div className="panel-heading"><div><span className="eyebrow">THE NETWORK</span><h2>Every hop counts.</h2></div><span className="nodes-status"><i/>{state.nodes.filter(node => node.online).length} / {state.nodes.length} nodes online</span></div>
+            <Narrator message={selected} events={events}/>
             <Topology state={state} message={selected} events={events}/>
             <div className="route-detail"><div><span className="small-label">SELECTED ROUTE</span><div className="route-path" aria-label="Selected route">{selected ? (selected.route.length ? selected.route.join(' → ') : 'Route unavailable') : 'Send a message to trace its route'}</div></div><div className={`route-status ${verified ? 'verified' : ''}`}>{verified ? <ShieldCheck size={15}/> : <Activity size={15}/>}<span>{selected ? deliveryLabel(selected) : 'Ready when you are'}</span></div></div>
           </section>
@@ -153,7 +185,7 @@ export function App({ client }: { client: MeshClient }) {
           </section>
         </section>
 
-        <aside className="phone-column employee-phone" aria-label="Basith · User 1 · Playa airport"><div className="phone-profile" role="group" aria-label="Basith profile"><PhoneIdentity role="employee" conversation="playa"/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat client={client} role="employee" conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft="On my way from the playa airport. See you at Mayan Warrior!" embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>Playa airport</div></aside>
+        <aside className="phone-column employee-phone" aria-label={`${camper(rightId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(rightId)} profile`}><PhoneIdentity role="employee" conversation="playa" endpoints={right}/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat client={client} role="employee" endpoints={right} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "On my way from the playa airport. See you at Mayan Warrior!" : `${camper(leftId)}, I can hear you through the mesh!`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Playa airport' : playaNodeLabels[rightId] ?? rightId}</div></aside>
       </div>
       <footer className="page-footer"><span><Waves size={14}/> BUILT TO KEEP PEOPLE CONNECTED.</span><span>TeamWater / CHRP <span className="footer-cross">+</span></span></footer>
     </main>

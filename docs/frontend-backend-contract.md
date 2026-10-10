@@ -26,7 +26,7 @@ The adapter consumes the backend team’s published OpenAPI 1.1 contract from `o
 
 - Message `receiver_status`, `awaiting_receipt` / `receipt_unconfirmed` statuses, metadata, radio-byte/retry/loss counters, and a verified `content_url`.
 - Snapshot `simulation` configuration and sequenced `events` with per-hop transmit, receive, drop, no-route and terminal receipt records.
-- `GET /messages/{msg_id}/content` for recovered full text, WebP images and Ogg/Opus audio. Only verified content is exposed. URLs must match the expected same-backend route.
+- `GET /messages/{msg_id}/content` for recovered full text, WebP images and Codec2 voice (decoded to WAV by the receiver). Only verified content is exposed. URLs must match the expected same-backend route.
 
 Receiver verification and sender receipt are separate states. A recipient can display verified content while the return receipt is pending. Sender **Delivered** requires both verification and terminal confirmation. The full text endpoint is fetched after verification, preserving text beyond the 60-character preview.
 

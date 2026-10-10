@@ -24,7 +24,7 @@ try:
         split_transfer,
         make_parity,
     )
-    from .reassembly import Receiver
+    from .node import MeshNode
     from .media import EncodedMedia, pack_media, unpack_media
 except ImportError:
     from packets import (
@@ -40,7 +40,7 @@ except ImportError:
         split_transfer,
         make_parity,
     )
-    from reassembly import Receiver
+    from node import MeshNode
     from media import EncodedMedia, pack_media, unpack_media
 
 PACKET_PAYLOAD_SIZE = DATA_BYTES
@@ -111,6 +111,7 @@ class MeshBackend:
         radio_range=180,
         drop_predicate=None,
         use_fec=True,
+        diverse_routes=False,
         link_retries=LINK_RETRIES,
     ):
         if (
@@ -128,14 +129,15 @@ class MeshBackend:
         self.playback_speed, self.max_attempts = playback_speed, max_attempts
         self.radio_range, self.seed = radio_range, seed
         self.rng = random.Random(seed)
+        self._route_rng = random.Random(seed)
         self.drop_predicate = drop_predicate
         self.use_fec = use_fec
+        self.diverse_routes = diverse_routes
         self.nodes = {}
         self.connections = defaultdict(set)
         self.messages = {}
         self.on_state_change: Optional[Callable] = None
-        self._receivers = {}
-        self.received_media = {}
+        self._runtime = {}
         self._tasks = {}
         self._channel = asyncio.Lock()
         self.queue_depth = 0
@@ -143,6 +145,15 @@ class MeshBackend:
         self.simulation_time = 0.0
         self._sequence = 0
         self._init_nodes()
+
+    @property
+    def received_media(self):
+        """Observer view of media verified by destination nodes; never read by senders."""
+        return {
+            mid: media
+            for runtime in self._runtime.values()
+            for mid, media in runtime.inbox.items()
+        }
 
     def _init_nodes(self):
         positions = [
@@ -155,6 +166,7 @@ class MeshBackend:
         ]
         for i, (x, y, name, color) in enumerate(positions):
             self.nodes[f"node{i}"] = Node(f"node{i}", name, x, y, color)
+            self._runtime[f"node{i}"] = MeshNode(i)
         self._update_connections()
 
     def _update_connections(self):
@@ -174,6 +186,7 @@ class MeshBackend:
             if key == "seed":
                 self.seed = value
                 self.rng = random.Random(value)
+                self._route_rng = random.Random(value)
             else:
                 setattr(self, key, value)
         self._update_connections()
@@ -201,6 +214,48 @@ class MeshBackend:
                     queue.append(path + [neighbor])
         return []
 
+    def _path_valid(self, path):
+        return bool(path) and all(self.nodes[n].online for n in path) and all(
+            b in self.connections[a] for a, b in zip(path, path[1:])
+        )
+
+    def _candidate_routes(self, source, destination):
+        shortest = self._route(source, destination)
+        if not shortest:
+            return []
+        limit = min(len(shortest) - 1 + 1, MAX_HOPS)
+        found = []
+
+        def walk(path):
+            if path[-1] == destination:
+                found.append(path)
+                return
+            if len(path) - 1 >= limit:
+                return
+            for nxt in sorted(self.connections[path[-1]]):
+                if nxt not in path and self.nodes[nxt].online:
+                    walk(path + [nxt])
+
+        walk([source])
+        return found
+
+    def _pick_route(self, msg, source, destination):
+        """Pin one randomly chosen route per message; reroute only if it breaks."""
+        if not self.diverse_routes:
+            return self._route(source, destination)
+        forward = getattr(msg, "pinned_route", None)
+        if not self._path_valid(forward):
+            options = self._candidate_routes(msg.src, msg.dst)
+            forward = self._route_rng.choice(options) if options else None
+            msg.pinned_route = forward
+        if not forward:
+            return []
+        if (source, destination) == (forward[0], forward[-1]):
+            return forward
+        if (source, destination) == (forward[-1], forward[0]):
+            return forward[::-1]
+        return self._route(source, destination)
+
     def _event(self, event_type, msg, **fields):
         self._sequence += 1
         self.events.append(
@@ -220,7 +275,7 @@ class MeshBackend:
 
     async def _transmit(self, frame, msg):
         source, destination = f"node{frame.source}", f"node{frame.destination}"
-        path = self._route(source, destination)
+        path = self._pick_route(msg, source, destination)
         msg.route_available = bool(path)
         if not path:
             self._event("no_route", msg, source=source, destination=destination)
@@ -352,27 +407,35 @@ class MeshBackend:
         self._notify()
         return msg_id
 
-    def _accept(self, frame, msg):
-        receiver = self._receivers[msg.msg_id]
-        before = len(receiver.recovered)
-        receiver.accept(frame)
+    def _deliver(self, frame, msg):
+        """Hand an arrived frame to its destination node; return that node's reply."""
+        reply = self._runtime[f"node{frame.destination}"].handle(frame)
+        self._observe(msg)
+        return reply
+
+    def _observe(self, msg):
+        """Telemetry only: copy destination-node state for the UI and tests.
+
+        The sender's protocol decisions never read this; it learns solely from
+        frames returned over the simulated radio.
+        """
+        receiver = self._runtime[msg.dst].receivers.get(msg.msg_id)
+        if receiver is None:
+            return
+        before = msg.fec_recovered
         msg.received_chunks = set(receiver.chunks)
         msg.fec_recovered = len(receiver.recovered)
         msg.receiver_status = "verified" if receiver.media else "partial"
-        if receiver.media:
-            self.received_media[msg.msg_id] = receiver.media
-            if msg.receiver_verified_at is None:
-                msg.receiver_verified_at = (
-                    time.monotonic() - msg.started_at
-                ) * self.playback_speed
+        if receiver.media and msg.receiver_verified_at is None:
+            msg.receiver_verified_at = (
+                time.monotonic() - msg.started_at
+            ) * self.playback_speed
         if msg.fec_recovered > before:
             self._event("fec_recovered", msg, chunk_ids=sorted(receiver.recovered))
         self._notify()
 
     async def _send(self, msg, chunks, expected_digest):
         msg.started_at = time.monotonic()
-        receiver = Receiver(len(chunks))
-        self._receivers[msg.msg_id] = receiver
         source, destination = int(msg.src[4:]), int(msg.dst[4:])
         attempts_by_chunk = defaultdict(int)
         try:
@@ -403,7 +466,7 @@ class MeshBackend:
                         )
                         arrived = await self._transmit(frame, msg)
                         if arrived:
-                            self._accept(arrived, msg)
+                            self._deliver(arrived, msg)
                     if attempt == 0 and self.use_fec and len(indexes) > 1:
                         frame = Frame(
                             PARITY,
@@ -416,7 +479,7 @@ class MeshBackend:
                         )
                         arrived = await self._transmit(frame, msg)
                         if arrived:
-                            self._accept(arrived, msg)
+                            self._deliver(arrived, msg)
                     # A tiny query elicits a bitmap or final receipt. Lost control frames
                     # cause query retries, not a resend of an entire known-good window.
                     if attempt:
@@ -429,27 +492,9 @@ class MeshBackend:
                     pending = []
                     if not arrived:
                         continue
-                    if receiver.media:
+                    if base + WINDOW_SIZE >= len(chunks):
                         msg.status = "awaiting_receipt"
-                        response = Frame(
-                            RECEIPT,
-                            msg.msg_id,
-                            destination,
-                            source,
-                            base,
-                            len(chunks),
-                            receiver.digest,
-                        )
-                    else:
-                        response = Frame(
-                            ACK,
-                            msg.msg_id,
-                            destination,
-                            source,
-                            base,
-                            len(chunks),
-                            receiver.bitmap(base),
-                        )
+                    response = self._deliver(arrived, msg)
                     returned = await self._transmit(response, msg)
                     if returned is None:
                         continue
@@ -473,7 +518,13 @@ class MeshBackend:
                         confirmed = True
                         break
                 if not confirmed:
-                    msg.status = "receipt_unconfirmed" if receiver.media else "failed"
+                    # Presentation label from observer telemetry; retry logic above
+                    # used only frames that came back over the radio.
+                    msg.status = (
+                        "receipt_unconfirmed"
+                        if msg.receiver_status == "verified"
+                        else "failed"
+                    )
                     msg.error = "Retry budget exhausted; delivery is not confirmed"
                     return
         except asyncio.CancelledError:
