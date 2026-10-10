@@ -45,6 +45,6 @@ The frontend is on `feat/expo-mesh-console`. See `FRONTEND.md` for reproducible 
 - **6 headed Chrome E2E tests passed**, including actual SVG packet movement and browser microphone capture (synthetic device) → backend → verified playable recipient audio. This does not establish physical device microphone or speaker behavior.
 - Console production build passed. Expo iOS, Android and web exports passed; the published EAS update performs a fresh native bundle export.
 - Independent review found cancellation, permission-dialog and stale-timer edges; each was corrected with regression tests. No remaining material review findings.
-- EAS project: `ravejedii/teamwater`, SDK 57, preview environment with phone-reachable HTTPS backend. Current backend is the unmodified latest teammate preview on port 8001 through a temporary tunnel; the Mac/service/tunnel must remain running.
+- EAS update published for iOS and Android from `1648c05`: group `ae210d34-d674-44c1-a662-26777c353814`, runtime `exposdk:57.0.0`; fetched manifest verified. EAS project: `ravejedii/teamwater`, SDK 57, preview environment with phone-reachable HTTPS backend. Current backend is the unmodified latest teammate preview on port 8001 through a temporary tunnel; the Mac/service/tunnel must remain running.
 
 A newly requested Jordan Code workspace and sponsor integration are a subsequent task; they are not included in the above verification counts.
