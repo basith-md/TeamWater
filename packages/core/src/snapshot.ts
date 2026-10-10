@@ -85,6 +85,7 @@ export function normalizeSnapshot(value: unknown) {
     simulationTime: simulation && finite(simulation.simulation_time) ? simulation.simulation_time : null,
     bitRate: simulation && finite(simulation.bit_rate) && simulation.bit_rate > 0 ? simulation.bit_rate : null,
     lossRate: simulation && finite(simulation.loss_rate) && simulation.loss_rate >= 0 && simulation.loss_rate <= 1 ? simulation.loss_rate : null,
+    playbackSpeed: simulation && finite(simulation.playback_speed) && simulation.playback_speed > 0 ? simulation.playback_speed : 1,
     distanceRouting: !!simulation && simulation.distance_routing === true,
     linkMetrics: simulation && Array.isArray(simulation.link_metrics) ? simulation.link_metrics.map(parseLink).filter((l): l is LinkMetric => !!l) : [],
     rangeMeters: simulation && finite(simulation.range_meters) && simulation.range_meters > 0 ? simulation.range_meters : null,

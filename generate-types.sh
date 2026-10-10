@@ -11,6 +11,7 @@ datamodel-codegen \
   --output shared/python/models.py \
   --input-file-type openapi \
   --output-model-type pydantic_v2.BaseModel \
+  --strict-nullable \
   --disable-timestamp \
   --formatters black isort
 

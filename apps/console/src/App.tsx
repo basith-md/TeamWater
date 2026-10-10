@@ -5,7 +5,7 @@ import type { MeshClient, MeshEvent, MeshMessage, MeshState } from '@teamwater/c
 import { PhoneChat, PhoneIdentity } from '@teamwater/mobile-ui';
 import { pickBrowserMedia } from './browserMedia';
 import { VerifiedAudio } from './VerifiedAudio';
-import { useTracePlayback } from './useTracePlayback';
+import { liveTransmission, useTracePlayback } from './useTracePlayback';
 import { VoiceRecorder } from './VoiceRecorder';
 import './styles.css';
 
@@ -21,10 +21,40 @@ const playaNodeLabels: Record<string, string> = {
 const camper = (id: string) => (playaNodeLabels[id] ?? id).split(' · ')[0];
 
 function PairPicker({ nodes, a, b, setA, setB }: { nodes: { id: string }[]; a: string; b: string; setA: (id: string) => void; setB: (id: string) => void }) {
-  const options = (other: string) => nodes.map(n => <option key={n.id} value={n.id} disabled={n.id === other}>{camper(n.id)} ({n.id})</option>);
-  return <div className="pair-picker" role="group" aria-label="Choose phones">
-    <label>Left phone<select aria-label="Left phone node" value={a} onChange={e => setA(e.target.value)}>{options(b)}</select></label>
-    <label>Right phone<select aria-label="Right phone node" value={b} onChange={e => setB(e.target.value)}>{options(a)}</select></label>
+  const [open, setOpen] = useState<'left' | 'right' | null>(null);
+  const wrapper = useRef<HTMLDivElement>(null);
+  const close = (restore = false) => {
+    if (restore && open) wrapper.current?.querySelector<HTMLButtonElement>(`[data-side="${open}"]`)?.focus();
+    setOpen(null);
+  };
+  useEffect(() => {
+    if (!open) return;
+    wrapper.current?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]')?.focus();
+    const outside = (event: PointerEvent) => { if (!wrapper.current?.contains(event.target as Node)) setOpen(null); };
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
+  }, [open]);
+  const picker = (side: 'left' | 'right', value: string, other: string, select: (id: string) => void) => {
+    const label = `${side === 'left' ? 'Left' : 'Right'} phone node`;
+    return <div className="phone-node-picker" onKeyDown={event => {
+      if (event.key === 'Escape') { event.preventDefault(); close(true); }
+      if (event.key === 'Tab') close();
+      if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault();
+        if (open !== side) { setOpen(side); return; }
+        const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]:not(:disabled)')];
+        const index = items.indexOf(document.activeElement as HTMLButtonElement);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+        items[next]?.focus();
+      }
+    }}>
+      <span className="phone-picker-label">{side === 'left' ? 'Left' : 'Right'} phone</span>
+      <button type="button" role="combobox" aria-label={label} aria-haspopup="listbox" aria-expanded={open === side} aria-controls={`${side}-phone-options`} data-side={side} onClick={() => setOpen(open === side ? null : side)}>{camper(value)} ({value}) <span aria-hidden="true">⌄</span></button>
+      {open === side && <div className="phone-node-options" id={`${side}-phone-options`} role="listbox" aria-label={`${label} options`}>{nodes.map(node => <button type="button" key={node.id} role="option" aria-selected={node.id === value} disabled={node.id === other} onClick={() => { select(node.id); close(true); }}>{camper(node.id)} ({node.id})</button>)}</div>}
+    </div>;
+  };
+  return <div ref={wrapper} className="pair-picker" role="group" aria-label="Choose phones">
+    {picker('left', a, b, setA)}{picker('right', b, a, setB)}
   </div>;
 }
 
@@ -42,17 +72,18 @@ function Metric({ name, value, unit, note, icon }: { name: string; value: number
   </section>;
 }
 
-function TracePacket({ event, from, to }: { event: MeshEvent; from: { x: number; y: number }; to: { x: number; y: number } }) {
+function TracePacket({ event, from, to, duration = 0.6, live = false }: { live?: boolean; duration?: number; event: MeshEvent; from: { x: number; y: number }; to: { x: number; y: number } }) {
   const motion = useRef<SVGElement>(null);
   const group = useRef<SVGGElement>(null);
   useLayoutEffect(() => {
+    if (live) return;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) group.current?.setAttribute('transform', `translate(${to.x},${to.y})`);
     else (motion.current as SVGAnimationElement | null)?.beginElement?.();
   }, []);
-  return <g ref={group} className="trace-packet" data-testid="trace-packet" data-event-id={event.id}>
+  return <g ref={group} transform={live ? `translate(${(from.x + to.x) / 2},${(from.y + to.y) / 2})` : undefined} className="trace-packet" data-testid="trace-packet" data-event-id={event.id}>
     <circle r="13" fill="#fffaf0" stroke="#f46638" strokeWidth="3"/><circle r="5" fill="#f46638"/>
     <rect x="17" y="-9" width="34" height="18" rx="4" fill="#f46638"/><text x="34" y="3" fill="white" fontSize="9" textAnchor="middle" fontFamily="monospace">#{event.sequence}</text>
-    <animateMotion ref={motion} begin="indefinite" dur="0.6s" repeatCount="1" fill="freeze" path={`M${from.x},${from.y} L${to.x},${to.y}`} />
+    {!live && <animateMotion ref={motion} begin="indefinite" dur={`${duration}s`} repeatCount="1" fill="freeze" path={`M${from.x},${from.y} L${to.x},${to.y}`} />}
   </g>;
 }
 
@@ -62,8 +93,17 @@ export function Topology({ state, message, events }: { state: MeshState; message
   const width = Math.max(...xs) - minX || 1, height = Math.max(...ys) - minY || 1;
   const positions = new Map(state.nodes.map(node => [node.id, { x: 64 + (node.x - minX) / width * 472, y: 72 + (node.y - minY) / height * 170 }]));
   const route = message?.route ?? [];
-  const playback = useTracePlayback(events, `${state.mode}:${state.endpoint}:${message?.id ?? 'none'}`);
-  const hopFrom = playback.current && positions.get(playback.current.from), hopTo = playback.current && positions.get(playback.current.to);
+  const traceKey = `${state.mode}:${state.endpoint}:${message?.id ?? 'none'}`;
+  const snapshotKey = `${traceKey}:${events.at(-1)?.sequence ?? 0}`;
+  const [replaySnapshot, setReplaySnapshot] = useState<string | null>(null);
+  const replaying = state.mode === 'replay' || replaySnapshot === snapshotKey;
+  const playback = useTracePlayback(replaying ? events : [], traceKey);
+  const terminal = !!message && ['delivered', 'failed', 'cancelled', 'receipt_unconfirmed'].includes(message.status);
+  const current = replaying ? playback.current : liveTransmission(events, terminal || state.connection !== 'connected');
+  const hopFrom = current && positions.get(current.from), hopTo = current && positions.get(current.to);
+  const duration = !replaying && current?.bytes && state.config.bitRate
+    ? Math.max(0.03, (current.bytes * 8 / state.config.bitRate + 0.05) / state.config.playbackSpeed) : 0.6;
+  const replayTrace = () => { setReplaySnapshot(snapshotKey); if (replaying) playback.replay(); };
   return <div className="topology-canvas">
     <div className="map-coordinate">Simulated Mesh Network</div>
     <svg className="mesh-map" viewBox="0 0 600 300" role="img" aria-label="Mesh network topology">
@@ -89,26 +129,27 @@ export function Topology({ state, message, events }: { state: MeshState; message
         </g>;
       })}
       {!state.nodes.length && <text x="300" y="150" textAnchor="middle" className="empty-map">Waiting for a network snapshot</text>}
-      {hopFrom && hopTo && playback.current && <TracePacket key={playback.serial} event={playback.current} from={hopFrom} to={hopTo}/>}
+      {hopFrom && hopTo && current && <TracePacket key={replaying ? `replay-${playback.serial}` : current.id} event={current} from={hopFrom} to={hopTo} duration={duration} live={!replaying}/>}
     </svg>
     <div className="map-legend"><span><i className="legend-dot"/>Online node</span><span><i className="legend-line"/>Selected route</span><span className="map-not-scale">Topology · not to scale</span></div>
-    <div className="trace-playback"><div className="trace-playback-heading"><strong>Trace playback</strong><button aria-label="Replay selected trace" disabled={!events.some(event => event.kind === 'packet_tx')} onClick={playback.replay}><RotateCcw size={11}/>Replay trace</button></div>
-      <div role="status" aria-label="Trace playback status">{playback.current ? <>{playback.current.from} → {playback.current.to} · {playback.queued} {playback.queued === 1 ? 'hop' : 'hops'} queued{(!hopFrom || !hopTo) && ' · coordinates unavailable'}</> : playback.observed ? 'Trace complete' : 'Waiting for observed transmit events'}</div>
-      <p>Visual timing only · backend timing stays in the ledger.</p>
+    <div className="trace-playback"><div className="trace-playback-heading"><strong>{replaying ? 'Trace playback' : 'Live packet activity'}</strong><button aria-label="Replay selected trace" disabled={!events.some(event => event.kind === 'packet_tx')} onClick={replayTrace}><RotateCcw size={11}/>Replay trace</button></div>
+      <div role="status" aria-label="Trace playback status">{current ? <>{current.from} → {current.to}{replaying ? ` · ${playback.queued} ${playback.queued === 1 ? 'hop' : 'hops'} queued` : ' · transmitting now'}{(!hopFrom || !hopTo) && ' · coordinates unavailable'}</> : replaying ? (playback.observed ? 'Trace complete' : 'Waiting for observed transmit events') : terminal ? deliveryLabel(message!) : 'Waiting for the next transmission'}</div>
+      <p>{replaying ? 'Visual timing only · backend timing stays in the ledger.' : 'Live backend events · synchronized with the phones and ledger.'}</p>
       {!!playback.skipped && <p className="trace-limit">{playback.skipped} observed hops not animated (presentation limit).</p>}
     </div>
   </div>;
 }
 
 function narrate(message: MeshMessage | undefined, events: MeshEvent[]): { title: string; body: string } {
-  if (!message) return { title: 'How this works', body: 'Send a message from either phone. Nothing reaches the other phone instantly: it is squeezed into ~230-byte radio packets, hopped across relay nodes over a slow, lossy radio, and only shown on the far phone once every chunk has arrived and its checksum matches.' };
+  if (!message) return { title: 'How this works', body: 'Send a message from either phone. Small radio packets hop across relay nodes. Receiver verification needs every chunk and a matching checksum; sender delivery confirmation also needs the checksum receipt to return.' };
   const route = message.route.length ? message.route.join(' → ') : 'the mesh';
   const drops = events.filter(e => e.kind === 'packet_dropped').length, retries = events.filter(e => e.kind === 'packet_retry').length;
-  const loss = drops || retries ? ` ${drops} packet${drops === 1 ? '' : 's'} got lost on the way and ${retries} ${retries === 1 ? 'was' : 'were'} resent.` : '';
-  if (message.status === 'failed') return { title: 'Transfer failed', body: `The mesh could not get every chunk through along ${route}. The receiving phone shows nothing because it never had the full message.${loss}` };
-  if (message.integrity === 'verified' && message.status === 'delivered') return { title: 'Delivered and verified', body: `All ${message.totalChunks} chunks arrived over ${route}. The receiver rebuilt the message, its checksum matched, and it sent a signed receipt back, so now (and only now) the phone displays it.${loss}` };
-  if (message.status === 'awaiting_receipt' || message.status === 'receipt_unconfirmed') return { title: 'Waiting for the receiver\u2019s proof', body: 'The sender has pushed out every chunk but will not say \u201cdelivered\u201d until the receiver sends back a checksum receipt. Lost receipts are retried.' };
-  return { title: 'In transit', body: `Sending ${message.totalChunks} chunks over ${route} at about 1 kbps. ${message.received}/${message.totalChunks} have reached the receiver so far. Each hop waits for an acknowledgment and resends lost packets; the far phone stays blank until all chunks are in and verified.${loss}` };
+  const loss = drops || retries ? ` The visible trace records ${drops} dropped transmissions and ${retries} retry attempts.` : '';
+  if (message.status === 'failed') return { title: 'Transfer failed', body: `Delivery was not confirmed along ${route}. ${message.integrity === 'verified' ? 'The receiver verified the content, but the sender did not confirm the final receipt.' : 'The transfer may have failed before receiver verification or while returning the receipt.'}${loss}` };
+  if (message.integrity === 'verified' && message.status === 'delivered' && message.receiptConfirmed) return { title: 'Delivered and verified', body: `All ${message.totalChunks} chunks arrived over ${route}. The receiver rebuilt the message and its checksum matched. The checksum receipt returned to the sender, confirming delivery.${loss}` };
+  if (message.integrity === 'verified') return { title: 'Receiver verified · delivery unconfirmed', body: `The receiver rebuilt the message and its checksum matched. It can show the verified content while the sender awaits the checksum receipt.${loss}` };
+  if (message.status === 'awaiting_receipt' || message.status === 'receipt_unconfirmed') return { title: 'Waiting for the receiver\u2019s proof', body: 'The sender is awaiting a checksum receipt. Receiver verification and sender delivery confirmation are separate; a missing receipt can leave delivery unconfirmed.' };
+  return { title: 'In transit', body: `Sending ${message.totalChunks} chunks over ${route}. ${message.received}/${message.totalChunks} have reached the receiver so far. Each hop waits for an acknowledgment and can retry lost packets. Unverified previews may appear before reconstruction and checksum verification.${loss}` };
 }
 
 function RouteProofPanel({ message, distanceAware }: { message?: MeshMessage; distanceAware: boolean }) {
@@ -120,7 +161,7 @@ function RouteProofPanel({ message, distanceAware }: { message?: MeshMessage; di
   return <div className="route-proof" aria-label="Route proof">
     <span className="small-label">WHY THIS ROUTE</span>
     <strong>{chain(proof.chosen)} · cost {proof.chosenCost.toFixed(2)} · {Math.round(proof.chosenDistance)} m</strong>
-    <p>Cost is expected transmissions: each hop is sent 1 / (1 − loss)² times on average (frame and ACK must both arrive), and loss rises with distance. {proof.optimal ? `Checked all ${proof.candidatesChecked} loop-free paths and confirmed with Dijkstra: none is cheaper.` : 'Could not confirm this path is the cheapest.'}</p>
+    <p>Cost is expected transmissions: each hop is sent 1 / (1 − loss)² times on average (frame and ACK must both arrive), and loss rises with distance. {proof.optimal ? `The simulator reports this route is cheapest among ${proof.candidatesChecked} checked paths.` : 'Could not confirm this path is the cheapest.'} Verification: {proof.verifiedBy.length ? proof.verifiedBy.join(', ') : 'not reported'}.</p>
     <table aria-label="Route comparison"><thead><tr><th>Path</th><th>Hops</th><th>Distance</th><th>Cost</th></tr></thead><tbody>
       <tr className="chosen"><td>{chain(proof.chosen)} ✓</td><td>{proof.chosen.length - 1}</td><td>{Math.round(proof.chosenDistance)} m</td><td>{proof.chosenCost.toFixed(2)}</td></tr>
       {proof.alternatives.map(alt => <tr key={alt.path.join('>')}><td>{chain(alt.path)}</td><td>{alt.hops}</td><td>{Math.round(alt.distance)} m</td><td>{alt.cost.toFixed(2)} <small>(+{alt.extraCost.toFixed(2)})</small></td></tr>)}
@@ -190,7 +231,7 @@ export function App({ client }: { client: MeshClient }) {
       {state.error && <div className="error-banner" role="alert">{state.error}</div>}
       <PairPicker nodes={state.nodes.length ? state.nodes : [{ id: 'node0' }, { id: 'node4' }]} a={leftId} b={rightId} setA={setLeftId} setB={setRightId}/>
       <div className="demo-stage">
-        <aside className="phone-column boss-phone" aria-label={`${camper(leftId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(leftId)} profile`}><PhoneIdentity role="boss" conversation="playa" endpoints={left}/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat client={client} role="boss" endpoints={left} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "Basith, come meet me at the Mayan Warrior set in deep playa!" : `${camper(rightId)}, where are you on the playa?`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Mayan Warrior · Deep playa' : playaNodeLabels[leftId] ?? leftId}</div></aside>
+        <aside className="phone-column boss-phone" aria-label={`${camper(leftId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(leftId)} profile`}><PhoneIdentity role="boss" conversation="playa" endpoints={left}/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat key={`left:${leftId}:${rightId}`} client={client} role="boss" endpoints={left} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "Basith, come meet me at the Mayan Warrior set in deep playa!" : `${camper(rightId)}, where are you on the playa?`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Mayan Warrior · Deep playa' : playaNodeLabels[leftId] ?? leftId}</div></aside>
 
         <section className="console-column" aria-label="Network console">
           <div className="network-conversation"><div className="network-conversation-title"><h2>{camper(leftId)} → {camper(rightId)}</h2><span className="network-mesh-badge"><i/>MESH</span></div><p>{isDefaultPair ? 'Playa airport' : (playaNodeLabels[rightId] ?? rightId).split(' · ')[1] ?? rightId}</p><div className="network-conversation-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div></div>
@@ -212,7 +253,7 @@ export function App({ client }: { client: MeshClient }) {
           </section>
         </section>
 
-        <aside className="phone-column employee-phone" aria-label={`${camper(rightId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(rightId)} profile`}><PhoneIdentity role="employee" conversation="playa" endpoints={right}/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat client={client} role="employee" endpoints={right} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "On my way from the playa airport. See you at Mayan Warrior!" : `${camper(leftId)}, I can hear you through the mesh!`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Playa airport' : playaNodeLabels[rightId] ?? rightId}</div></aside>
+        <aside className="phone-column employee-phone" aria-label={`${camper(rightId)} · phone`}><div className="phone-profile" role="group" aria-label={`${camper(rightId)} profile`}><PhoneIdentity role="employee" conversation="playa" endpoints={right}/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat key={`right:${rightId}:${leftId}`} client={client} role="employee" endpoints={right} conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft={isDefaultPair ? "On my way from the playa airport. See you at Mayan Warrior!" : `${camper(leftId)}, I can hear you through the mesh!`} embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>{isDefaultPair ? 'Playa airport' : playaNodeLabels[rightId] ?? rightId}</div></aside>
       </div>
       <footer className="page-footer"><span><Waves size={14}/> BUILT TO KEEP PEOPLE CONNECTED.</span><span>TeamWater / CHRP <span className="footer-cross">+</span></span></footer>
     </main>

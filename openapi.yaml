@@ -11,7 +11,7 @@ info:
     Modify only this OpenAPI spec, then regenerate.
 
     '
-  version: 1.1.0
+  version: 1.2.0
 servers:
 - url: http://localhost:8000
   description: Local development
@@ -87,7 +87,7 @@ paths:
   /send/voice:
     post:
       operationId: sendVoice
-      summary: Send a compressed voice note across the mesh
+      summary: Send first-five-seconds Codec2 voice across the mesh; verified playback is WAV
       requestBody:
         required: true
         content:
@@ -194,6 +194,27 @@ paths:
           description: A transfer is active
         '422':
           description: Invalid configuration
+  /simulation/routing:
+    post:
+      operationId: configureRouting
+      summary: Enable or disable distance-aware ETX routing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoutingConfig'
+      responses:
+        '200':
+          description: Updated simulation settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Simulation'
+        '409':
+          description: A transfer is active
+        '422':
+          description: Invalid routing configuration
   /simulation/reset:
     post:
       operationId: resetSimulation
@@ -250,7 +271,7 @@ paths:
           type: string
       responses:
         '200':
-          description: Verified receiver bytes only; text is decompressed
+          description: Verified receiver content only; text is decompressed and Codec2 voice is decoded to mono PCM WAV
           content:
             text/plain:
               schema:
@@ -458,6 +479,10 @@ components:
             type: string
         route_available:
           type: boolean
+        route_proof:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/RouteProof'
         receiver_verified_at:
           type: number
           nullable: true
@@ -552,6 +577,96 @@ components:
           type: integer
         metadata:
           $ref: '#/components/schemas/MediaMetadata'
+    RoutingConfig:
+      type: object
+      required:
+      - distance_routing
+      properties:
+        distance_routing:
+          type: boolean
+    LinkMetric:
+      type: object
+      required:
+      - source
+      - destination
+      - distance
+      - loss
+      - etx
+      properties:
+        source:
+          type: string
+        destination:
+          type: string
+        distance:
+          type: number
+        loss:
+          type: number
+        etx:
+          type: number
+    RouteAlternative:
+      type: object
+      required:
+      - path
+      - hops
+      - cost
+      - distance
+      - extra_cost
+      properties:
+        path:
+          type: array
+          items:
+            type: string
+        hops:
+          type: integer
+        cost:
+          type: number
+        distance:
+          type: number
+        extra_cost:
+          type: number
+    RouteProof:
+      type: object
+      required:
+      - metric
+      - chosen
+      - chosen_cost
+      - chosen_distance
+      - candidates_checked
+      - verified_by
+      - dijkstra_cost
+      - optimal
+      - links
+      - alternatives
+      properties:
+        metric:
+          type: string
+        chosen:
+          type: array
+          items:
+            type: string
+        chosen_cost:
+          type: number
+        chosen_distance:
+          type: number
+        candidates_checked:
+          type: integer
+        verified_by:
+          type: array
+          items:
+            type: string
+        dijkstra_cost:
+          type: number
+          nullable: true
+        optimal:
+          type: boolean
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/LinkMetric'
+        alternatives:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteAlternative'
     SimulationConfig:
       type: object
       additionalProperties: false
@@ -619,6 +734,12 @@ components:
           type: boolean
         link_retries:
           type: integer
+        distance_routing:
+          type: boolean
+        link_metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/LinkMetric'
     MediaMetadata:
       type: object
       additionalProperties: true
@@ -645,7 +766,15 @@ components:
           type: integer
         codec:
           type: string
+        codec2_mode:
+          type: integer
+        sample_rate:
+          type: integer
+        sample_count:
+          type: integer
         mime:
+          type: string
+        playback_mime:
           type: string
         media_type:
           type: string

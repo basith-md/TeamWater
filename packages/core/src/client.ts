@@ -106,7 +106,7 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
     }
     lastSequence = newest; lastSimulationTime = snapshot.simulationTime;
     emit({ nodes: snapshot.nodes, links: snapshot.links, messages, events: merged.slice(-2000), eventHistoryComplete: complete,
-      config: { ...state.config, bitRate: snapshot.bitRate, lossRate: snapshot.lossRate, rangeMeters: snapshot.rangeMeters },
+      config: { ...state.config, bitRate: snapshot.bitRate, lossRate: snapshot.lossRate, rangeMeters: snapshot.rangeMeters, playbackSpeed: snapshot.playbackSpeed },
       capabilities: { packetEvents: snapshot.packetEvents, controls: false, verifiedContent: snapshot.packetEvents || Object.values(messages).some(m => m.receiverStatus !== undefined) },
       routing: { distanceAware: snapshot.distanceRouting, links: snapshot.linkMetrics },
       connection: 'connected', error: contentError(messages) });
