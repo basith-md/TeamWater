@@ -121,21 +121,16 @@ const statusLabel = (m: MeshMessage) =>
   : 'In transit';
 
 function LastMessage({ message }: { message: MeshMessage | undefined }) {
-  if (!message) return <div className="last-message" role="status" aria-label="Last message"><span className="small-label">LAST MESSAGE</span><p className="last-empty">Nothing sent yet.</p></div>;
-  const num = (value: number | undefined, digits = 0) => value === undefined ? '—' : value.toLocaleString(undefined, { maximumFractionDigits: digits });
-  const rows: [string, string][] = [
-    ['Latency', message.receiverVerifiedSeconds != null ? `${num(message.receiverVerifiedSeconds, 1)} s` : message.etaSeconds != null ? `~${num(message.etaSeconds)} s left` : '—'],
-    ['Chunks', `${message.received} / ${message.totalChunks}`],
-    ['Hops', message.route.length ? String(message.route.length - 1) : '—'],
-    ['Bytes on air', message.radioBytes !== undefined ? `${num(message.radioBytes)} B` : '—'],
-    ['Payload', message.encodedBytes !== undefined ? `${num(message.encodedBytes)} B` : '—'],
-    ['Retries', num(message.retries)],
-    ['Lost packets', num(message.lostPackets)],
-    ['Airtime', message.airtimeSeconds !== undefined ? `${num(message.airtimeSeconds, 1)} s` : '—'],
+  const verifiedAt = message?.receiverVerifiedSeconds;
+  const tiles: { name: string; value: number | null; unit: string; note: string; icon: React.ReactNode }[] = [
+    { name: 'Latency', value: verifiedAt ?? message?.etaSeconds ?? null, unit: 's', note: verifiedAt != null ? 'Time to receiver verification' : message?.etaSeconds != null ? 'Estimated time remaining' : 'Not reported yet', icon: <Activity size={13}/> },
+    { name: 'Bytes on air', value: message?.radioBytes ?? null, unit: 'B', note: message?.encodedBytes !== undefined ? `Payload ${message.encodedBytes.toLocaleString()} B` : 'All transmitted frames', icon: <Signal size={13}/> },
+    { name: 'Retries', value: message?.retries ?? null, unit: '', note: `${message?.received ?? 0} / ${message?.totalChunks ?? 0} chunks received`, icon: <RotateCcw size={13}/> },
+    { name: 'Lost packets', value: message?.lostPackets ?? null, unit: '', note: message?.airtimeSeconds !== undefined ? `Airtime ${message.airtimeSeconds.toFixed(1)} s` : 'Dropped frames', icon: <ArrowDownLeft size={13}/> },
   ];
   return <div className="last-message" role="status" aria-label="Last message">
-    <div className="last-head"><span className="small-label">LAST MESSAGE · {message.kind}</span><strong>{statusLabel(message)}</strong></div>
-    <dl>{rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
+    <div className="last-head"><span className="small-label">LAST MESSAGE{message ? ` · ${message.kind}` : ''}</span><strong>{message ? statusLabel(message) : 'Nothing sent yet'}</strong></div>
+    <div className="metrics-row">{tiles.map(tile => <Metric key={tile.name} {...tile}/>)}</div>
   </div>;
 }
 
