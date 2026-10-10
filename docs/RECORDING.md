@@ -39,8 +39,8 @@ come from backend simulation time.
 
 Restart only the port 8003 process and reload the console for a clean take.
 The backend's general `/simulation/reset` restores its default topology, so it
-is not the recording reset. Other team preview services on ports 8001 and 8002
-are separate and should stay running.
+is not the recording reset. The shared preview and Expo services are retired;
+only the console on port 5173 and recording backend on port 8003 need to run.
 
 The remote boss → gate → Jordan coding workflow is separate and not part of
 this completed meetup scene.

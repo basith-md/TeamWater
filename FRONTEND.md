@@ -58,23 +58,21 @@ Use `http://127.0.0.1:8000` from iOS Simulator, `http://10.0.2.2:8000` from an A
 
 Launch links can select each phone's role and endpoint, for example `exp://127.0.0.1:8081/--/?role=employee&mode=live&endpoint=http%3A%2F%2F127.0.0.1%3A8001`. Select Boss/Playa in the app to change roles without restarting.
 
-## Shared team preview
+## Local demo only
 
-Open [the hosted phone app](https://chrp-team.lucas-crawford-richards.workers.dev) on every phone and enter the team password provided separately. It runs in Safari or Chrome; Expo account membership is not required. Select Boss on one phone and Playa on another. These are two shared demo identities, not separate accounts for each teammate.
+The shared Cloudflare preview was retired on October 10, 2026. Its Worker was removed and its backend and tunnel were stopped. Expo development services were also stopped. The source is retained for reference; there is no active hosted team preview.
 
-Cloudflare serves the Expo web export behind server-side password authentication and a signed, expiring cookie. HTTP and WebSocket traffic uses the same `/api` origin. The Python mesh service remains on the development Mac, reached through an origin-token-protected tunnel; the Mac, service, and tunnel must stay running. This protected web session is separate from the earlier native Expo demo backend. Use the same hosted URL on all phones for this shared session.
-
-The worker lives in `apps/team-preview`; `deployment/teamwater_origin.py` wraps the backend without changing the team's service implementation. Deployment secrets are held in macOS Keychain and sent to Cloudflare via stdin, never checked into git. Rebuild with `npm run build --workspace @teamwater/team-preview`, then deploy the prebuilt worker using the saved secrets. The web build deliberately clears Metro's cache so native EAS environment values cannot leak into the hosted connection configuration.
+Use http://localhost:5173 for the recording demo, with the mesh backend on port 8003. See [recording instructions](docs/RECORDING.md). Only those two processes need to run.
 
 Native and mobile-web chat compact their headers while typing, preserve the draft and recorder, and reserve the remaining viewport for messages. A Done button dismisses the keyboard. Physical-device keyboard geometry still needs confirmation; automated tests cover focus, draft preservation, and keyboard events.
 
-## Expo Go on iPhone and Android
+## Archived Expo Go setup (not used for the demo)
 
-The EAS project is [ravejedii/teamwater](https://expo.dev/accounts/ravejedii/projects/teamwater). The latest native keyboard fix was published from commit `0640c52` for iOS and Android, SDK 57, update group `e9ccb226-e494-41d2-9cad-5a1e779b7399`. The account dashboard URL is administrative, not an app launcher. Published Expo Go previews require Expo sign-in and ownership or membership of the project's owning organization; a QR code does not grant access. Use the hosted team preview above for immediate sharing. See [Expo's published-project access rules](https://expo.dev/changelog/expo-go-loading-changes-may-2026).
+The EAS project is [ravejedii/teamwater](https://expo.dev/accounts/ravejedii/projects/teamwater). The latest native keyboard fix was published from commit `0640c52` for iOS and Android, SDK 57, update group `e9ccb226-e494-41d2-9cad-5a1e779b7399`. The account dashboard URL is administrative, not an app launcher. Published Expo Go previews require Expo sign-in and ownership or membership of the project's owning organization; a QR code does not grant access. The hosted team preview has been retired; use the local console for this demo. See [Expo's published-project access rules](https://expo.dev/changelog/expo-go-loading-changes-may-2026).
 
 With compatible Expo Go already installed, [open the app directly](exp://u.expo.dev/12bc6cfe-8f05-43f8-8381-14401575cff8/group/e9ccb226-e494-41d2-9cad-5a1e779b7399), or [scan the Expo Go QR code](https://qr.expo.dev/eas-update?projectId=12bc6cfe-8f05-43f8-8381-14401575cff8&groupId=e9ccb226-e494-41d2-9cad-5a1e779b7399) from another screen. Some chat browsers do not open `exp://` links; use the HTTPS preview launcher in Safari or Chrome in that case. Current store Expo Go supports SDK 57; verify the installed version against [the official release announcement](https://expo.dev/changelog/expo-go-57-login). An older troubleshooting page incorrectly described the store as SDK 54-only; do not downgrade this project based on that page. The published preview uses `EXPO_PUBLIC_BACKEND_URL` from the EAS **preview** environment and starts in live mode. Choose **Boss / node0** on one phone and **Playa / node4** on the other. These are two shared demo identities, not individual teammate accounts.
 
-The current preview backend runs on the development Mac through a temporary HTTPS Cloudflare tunnel. The Mac, Python service and tunnel must remain running. If that tunnel is replaced, update the public backend URL in EAS and publish again, or enter the replacement URL in the app's Settings. This is a device-testing setup, not a permanent backend deployment. No backend credentials are embedded in the app.
+The former preview backend and temporary HTTPS Cloudflare tunnel are stopped. The following setup notes are historical. The Mac, Python service and tunnel must remain running. If that tunnel is replaced, update the public backend URL in EAS and publish again, or enter the replacement URL in the app's Settings. This is a device-testing setup, not a permanent backend deployment. No backend credentials are embedded in the app.
 
 To publish an update from `apps/mobile`:
 
