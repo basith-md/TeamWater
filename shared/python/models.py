@@ -47,6 +47,15 @@ class ReceiverStatus(Enum):
     verified = 'verified'
 
 
+class NodePosition(BaseModel):
+    x: confloat(ge=0.0, le=10000.0) = Field(
+        ..., description='Horizontal position in meters'
+    )
+    y: confloat(ge=0.0, le=10000.0) = Field(
+        ..., description='Vertical position in meters'
+    )
+
+
 class RoutingConfig(BaseModel):
     distance_routing: bool
 

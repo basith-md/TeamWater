@@ -102,12 +102,12 @@ describe('live packet synchronization', () => {
     expect(screen.getByTestId('trace-packet')).toHaveAttribute('data-event-id', 'event-3');
     expect(playback()).not.toHaveTextContent('queued');
     expect(screen.getByText('Live packet activity')).toBeInTheDocument();
-    expect(screen.getByTestId('trace-packet')).toHaveAttribute('transform', 'translate(418,157)');
-    expect(screen.getByTestId('trace-packet').querySelector('animateMotion')).toBeNull();
+    expect(screen.getByTestId('trace-packet').querySelector('[path]')).toHaveAttribute('path', 'M300,242 L418,157');
+    expect(screen.getByTestId('trace-packet').querySelector('[path]')).toHaveAttribute('fill', 'freeze');
   });
   it('holds the marker between nodes through a dropped attempt until reception', () => {
     const view = render(<Topology state={liveState} message={sending} events={[hop(1), { ...hop(2), kind: 'packet_dropped' }]}/>);
-    expect(screen.getByTestId('trace-packet')).toHaveAttribute('transform', 'translate(182,157)');
+    expect(screen.getByTestId('trace-packet').querySelector('[path]')).toHaveAttribute('path', 'M64,72 L182,157');
     view.rerender(<Topology state={liveState} message={sending} events={[hop(1), { ...hop(2), kind: 'packet_dropped' }, hop(3), { ...hop(4), kind: 'packet_rx' }]}/>);
     expect(screen.queryByTestId('trace-packet')).not.toBeInTheDocument();
   });

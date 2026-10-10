@@ -76,14 +76,13 @@ function TracePacket({ event, from, to, duration = 0.6, live = false }: { live?:
   const motion = useRef<SVGElement>(null);
   const group = useRef<SVGGElement>(null);
   useLayoutEffect(() => {
-    if (live) return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) group.current?.setAttribute('transform', `translate(${to.x},${to.y})`);
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) group.current?.setAttribute('transform', `translate(${live ? (from.x + to.x) / 2 : to.x},${live ? (from.y + to.y) / 2 : to.y})`);
     else (motion.current as SVGAnimationElement | null)?.beginElement?.();
   }, []);
-  return <g ref={group} transform={live ? `translate(${(from.x + to.x) / 2},${(from.y + to.y) / 2})` : undefined} className="trace-packet" data-testid="trace-packet" data-event-id={event.id}>
+  return <g ref={group} className="trace-packet" data-testid="trace-packet" data-event-id={event.id}>
     <circle r="13" fill="#fffaf0" stroke="#f46638" strokeWidth="3"/><circle r="5" fill="#f46638"/>
     <rect x="17" y="-9" width="34" height="18" rx="4" fill="#f46638"/><text x="34" y="3" fill="white" fontSize="9" textAnchor="middle" fontFamily="monospace">#{event.sequence}</text>
-    {!live && <animateMotion ref={motion} begin="indefinite" dur={`${duration}s`} repeatCount="1" fill="freeze" path={`M${from.x},${from.y} L${to.x},${to.y}`} />}
+    <animateMotion ref={motion} begin="indefinite" dur={`${live ? Math.min(0.25, duration * 0.4) : duration}s`} repeatCount="1" fill="freeze" path={`M${from.x},${from.y} L${live ? (from.x + to.x) / 2 : to.x},${live ? (from.y + to.y) / 2 : to.y}`} />
   </g>;
 }
 
@@ -145,7 +144,7 @@ export function Topology({ state, message, events, onMove }: { state: MeshState;
         </g>;
       })}
       {!state.nodes.length && <text x="300" y="150" textAnchor="middle" className="empty-map">Waiting for a network snapshot</text>}
-      {hopFrom && hopTo && current && <TracePacket key={replaying ? `replay-${playback.serial}` : current.id} event={current} from={hopFrom} to={hopTo} duration={duration} live={!replaying}/>}
+      {hopFrom && hopTo && current && <TracePacket key={replaying ? `replay-${playback.serial}` : `${current.messageId}:${current.packetKind}:${current.chunk}:${current.from}:${current.to}`} event={current} from={hopFrom} to={hopTo} duration={duration} live={!replaying}/>}
     </svg>
     <div className="map-legend"><span><i className="legend-dot"/>Online node</span><span><i className="legend-line"/>Selected route</span><span className="map-not-scale">{onMove ? 'Drag a node to change distances' : 'Topology · not to scale'}</span></div>
     <div className="trace-playback"><div className="trace-playback-heading"><strong>{replaying ? 'Trace playback' : 'Live packet activity'}</strong><button aria-label="Replay selected trace" disabled={!events.some(event => event.kind === 'packet_tx')} onClick={replayTrace}><RotateCcw size={11}/>Replay trace</button></div>
@@ -247,7 +246,7 @@ export function App({ client }: { client: MeshClient }) {
     </header>
 
     <main id="overview">
-      <div className="page-heading"><div><div className="eyebrow">OFF-GRID COMMUNICATION / PLAYA MESH</div><h1>Find your people.<br className="mobile-break"/> Across the playa.</h1><p>Malcome is at Mayan Warrior in deep playa. Basith is at the playa airport. Watch their messages hop through the local mesh.</p></div></div>
+      <div className="page-heading"><div><h1>Message Your People At Burning Man Without Cell Service</h1><p>Malcome is at Mayan Warrior in deep playa. Basith is at the playa airport. Watch their messages hop through the local mesh.</p></div></div>
       {state.error && <div className="error-banner" role="alert">{state.error}</div>}
       <PairPicker nodes={state.nodes.length ? state.nodes : [{ id: 'node0' }, { id: 'node4' }]} a={leftId} b={rightId} setA={setLeftId} setB={setRightId}/>
       <div className="demo-stage">

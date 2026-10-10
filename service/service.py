@@ -9,7 +9,6 @@ import os
 from typing import Set
 
 import uvicorn
-from pydantic import BaseModel
 from fastapi import (
     FastAPI,
     WebSocket,
@@ -40,7 +39,7 @@ from media import (
     MAX_UPLOAD,
 )
 
-from shared.python.models import SimulationConfig
+from shared.python.models import SimulationConfig, RoutingConfig, NodePosition
 
 app = FastAPI(title="CHRP Mesh Service")
 backend = MeshBackend(playback_speed=float(os.environ.get("TEAMWATER_PLAYBACK_SPEED", "2")), diverse_routes=True)
@@ -198,21 +197,12 @@ async def configure_simulation(config: SimulationConfig):
     return backend.get_state()["simulation"]
 
 
-class RoutingConfig(BaseModel):
-    distance_routing: bool
-
-
 @app.post("/simulation/routing")
 async def configure_routing(config: RoutingConfig):
     if any(not task.done() for task in backend._tasks.values()):
         raise HTTPException(409, "Wait for active transfers to finish before changing routing")
     backend.configure(distance_routing=config.distance_routing)
     return backend.get_state()["simulation"]
-
-
-class NodePosition(BaseModel):
-    x: float
-    y: float
 
 
 @app.post("/simulation/nodes/{node_id}/position")

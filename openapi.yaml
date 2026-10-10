@@ -215,6 +215,35 @@ paths:
           description: A transfer is active
         '422':
           description: Invalid routing configuration
+  /simulation/nodes/{node_id}/position:
+    post:
+      operationId: moveNode
+      summary: Move an idle simulated node in meter coordinates
+      parameters:
+      - name: node_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodePosition'
+      responses:
+        '200':
+          description: Updated simulation settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Simulation'
+        '404':
+          description: Unknown node
+        '409':
+          description: A transfer is active
+        '422':
+          description: Invalid position or coordinates outside 0 through 10000 meters
   /simulation/reset:
     post:
       operationId: resetSimulation
@@ -577,6 +606,22 @@ components:
           type: integer
         metadata:
           $ref: '#/components/schemas/MediaMetadata'
+    NodePosition:
+      type: object
+      required:
+      - x
+      - y
+      properties:
+        x:
+          type: number
+          minimum: 0
+          maximum: 10000
+          description: Horizontal position in meters
+        y:
+          type: number
+          minimum: 0
+          maximum: 10000
+          description: Vertical position in meters
     RoutingConfig:
       type: object
       required:

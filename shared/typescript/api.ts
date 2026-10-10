@@ -139,6 +139,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/simulation/nodes/{node_id}/position": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move an idle simulated node in meter coordinates */
+        post: operations["moveNode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/simulation/reset": {
         parameters: {
             query?: never;
@@ -301,6 +318,12 @@ export interface components {
             compressed: number;
             chunks: number;
             metadata: components["schemas"]["MediaMetadata"];
+        };
+        NodePosition: {
+            /** @description Horizontal position in meters */
+            x: number;
+            /** @description Vertical position in meters */
+            y: number;
         };
         RoutingConfig: {
             distance_routing: boolean;
@@ -695,6 +718,53 @@ export interface operations {
                 content?: never;
             };
             /** @description Invalid routing configuration */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    moveNode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodePosition"];
+            };
+        };
+        responses: {
+            /** @description Updated simulation settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Simulation"];
+                };
+            };
+            /** @description Unknown node */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A transfer is active */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid position or coordinates outside 0 through 10000 meters */
             422: {
                 headers: {
                     [name: string]: unknown;

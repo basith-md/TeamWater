@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { deliveryLabel, roleNodes } from '@teamwater/core';
 import type { MediaAsset, MeshClient, MeshMessage, Role } from '@teamwater/core';
@@ -27,8 +27,8 @@ const identities = {
     employee: { name: 'Jordan', title: 'Engineer', location: 'Burning Man · Black Rock City', initial: 'J', contact: 'Alex', contactPlace: 'San Francisco, CA' },
   },
   playa: {
-    boss: { name: 'Malcome', title: 'User 2', location: 'Deep playa · Mayan Warrior', initial: 'M', contact: 'Basith', contactPlace: 'Playa airport' },
-    employee: { name: 'Basith', title: 'User 1', location: 'Playa airport', initial: 'B', contact: 'Malcome', contactPlace: 'Deep playa · Mayan Warrior' },
+    boss: { name: 'Malcome', title: 'User 2', location: 'Deep Playa · Mayan Warrior', initial: 'M', contact: 'Basith', contactPlace: 'Playa airport' },
+    employee: { name: 'Basith', title: 'User 1', location: 'Playa airport', initial: 'B', contact: 'Malcome', contactPlace: 'Deep Playa · Mayan Warrior' },
   },
 };
 
@@ -47,6 +47,20 @@ export function PhoneChat({ client, role, endpoints, conversation = 'work', init
   const inputScale = Number.isFinite(fontScale) && fontScale > 1 ? fontScale : 1;
   const state = useSyncExternalStore(client.subscribe.bind(client), client.getSnapshot.bind(client), client.getSnapshot.bind(client));
   const [draft, setDraft] = useState(initialDraft);
+  const [contentHeight, setContentHeight] = useState(0);
+  const inputRef = useRef<TextInput>(null);
+  const inputMinHeight = Math.ceil(40 * inputScale + 16);
+  const inputMaxHeight = Math.ceil(140 * inputScale + 24);
+  const inputHeight = Math.min(inputMaxHeight, Math.max(inputMinHeight, contentHeight, draft.split('\n').length * 20 * inputScale + 16));
+  useLayoutEffect(() => {
+    if (Platform.OS !== 'web' || !inputRef.current) return;
+    const input = inputRef.current as unknown as { style: { height: string }; scrollHeight: number; scrollTop: number };
+    input.style.height = 'auto';
+    const measured = Math.min(inputMaxHeight, Math.max(inputMinHeight, input.scrollHeight));
+    input.style.height = `${measured}px`;
+    if (measured < inputMaxHeight) input.scrollTop = 0;
+    setContentHeight(measured);
+  }, [draft, inputMinHeight, inputMaxHeight]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sessionNumber = useRef(0);
@@ -117,7 +131,7 @@ export function PhoneChat({ client, role, endpoints, conversation = 'work', init
     {(error || state.error) && <View accessibilityRole="alert" style={styles.error}><Text style={styles.errorText}>{error || state.error}</Text></View>}
     <View style={[styles.composeArea, compact && styles.compactComposeArea]}>
       {state.mode === 'live' && renderVoiceRecorder && <View key={session.key}>{renderVoiceRecorder({ onSend: sendRecordedVoice, disabled: busy })}</View>}
-      <View style={styles.compose}><TextInput accessibilityLabel="Message input" placeholder={`Message ${identity.contact}…`} placeholderTextColor="#8d8982" value={draft} onChangeText={setDraft} onFocus={() => { onComposerFocusChange?.(true); list.current?.scrollToEnd({ animated: false }); }} onBlur={() => onComposerFocusChange?.(false)} multiline numberOfLines={2} textAlignVertical="top" maxLength={8000} scrollEnabled style={[styles.input, { minHeight: Math.ceil(40 * inputScale + 16), maxHeight: Math.ceil(80 * inputScale + 24) }]}/><Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={busy || !draft.trim()} onPress={send} style={[styles.send, (busy || !draft.trim()) && styles.disabled]}>{busy ? <ActivityIndicator color="#fff" size="small"/> : <Text style={styles.sendArrow}>↑</Text>}</Pressable></View>
+      <View style={styles.compose}><TextInput ref={inputRef} accessibilityLabel="Message input" placeholder={`Message ${identity.contact}…`} placeholderTextColor="#8d8982" value={draft} onChangeText={text => { setDraft(text); if (!text) setContentHeight(0); }} onContentSizeChange={event => setContentHeight(event.nativeEvent.contentSize.height)} onFocus={() => { onComposerFocusChange?.(true); list.current?.scrollToEnd({ animated: false }); }} onBlur={() => onComposerFocusChange?.(false)} multiline numberOfLines={2} textAlignVertical="top" maxLength={8000} scrollEnabled style={[styles.input, { height: inputHeight, minHeight: inputMinHeight, maxHeight: inputMaxHeight }]}/><Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={busy || !draft.trim()} onPress={send} style={[styles.send, (busy || !draft.trim()) && styles.disabled]}>{busy ? <ActivityIndicator color="#fff" size="small"/> : <Text style={styles.sendArrow}>↑</Text>}</Pressable></View>
       <View style={styles.composeFooter}><View style={styles.attachments}><Pressable accessibilityRole="button" accessibilityLabel="Attach image" disabled={busy} onPress={() => attach('image')} style={styles.attachment}><Text style={styles.attachmentText}>▧ Image</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Attach voice file" disabled={busy} onPress={() => attach('voice')} style={styles.attachment}><Text style={styles.attachmentText}>≋ Audio file</Text></Pressable></View>{!compact && <Text accessibilityLabel={state.mode === 'replay' ? 'Voice recording requires Live mode' : renderVoiceRecorder ? undefined : 'Voice recording unavailable in this view'} style={styles.composeHint}>{state.mode === 'replay' ? 'VOICE: LIVE ONLY' : renderVoiceRecorder ? 'STORE · FORWARD' : 'RECORDER UNAVAILABLE'}</Text>}</View>
     </View>
   </View>;
