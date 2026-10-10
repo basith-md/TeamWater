@@ -5,6 +5,7 @@ Other services can also import MeshBackend directly and skip this layer.
 """
 
 import asyncio
+import os
 from typing import Set
 
 import uvicorn
@@ -41,7 +42,7 @@ from media import (
 from shared.python.models import SimulationConfig
 
 app = FastAPI(title="CHRP Mesh Service")
-backend = MeshBackend(playback_speed=100)
+backend = MeshBackend(playback_speed=float(os.environ.get("TEAMWATER_PLAYBACK_SPEED", "2")))
 
 # Track connected WebSocket clients
 connected_clients: Set[WebSocket] = set()
