@@ -1,4 +1,6 @@
 # CHRP Mesh — Backend + Service
+**Backend (live):** [https://teamwater.onrender.com](https://teamwater.onrender.com)
+
 
 The Expo mobile app and browser packet console are documented in [FRONTEND.md](FRONTEND.md). Run `npm ci` and `npm run dev` from this repo root to open the interactive three-panel demo at http://localhost:5173.
 
