@@ -26,7 +26,8 @@ test.runIf(Boolean(process.env.TEAMWATER_PIPELINE_URL))('the teammate pipeline s
     const metrics = deriveTelemetry(state, id);
     expect(metrics.transmittedBytes).toBeGreaterThan(0);
     expect(metrics.bitRate).toBeGreaterThan(0);
-    expect(metrics.rangeMeters).toBeNull();
-    expect(metrics.latencyMs).toBeNull(); // backend clock measures channel occupancy, not end-to-end time
+    expect(metrics.rangeMeters).toBeGreaterThan(0);
+    expect(metrics.latencyMs).toBeGreaterThan(0); // receiver verification latency reported by schema 1.1
+    expect(metrics.observedLossRate).not.toBeNull();
   } finally { client.dispose(); }
 }, 45_000);

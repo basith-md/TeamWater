@@ -10,9 +10,10 @@ export type BackendMediaRequest = operations['sendImage']['requestBody']['conten
 export type BackendTextResponse = operations['sendText']['responses'][200]['content']['application/json'];
 export type BackendVoiceResponse = operations['sendVoice']['responses'][200]['content']['application/json'];
 export type BackendImageResponse = operations['sendImage']['responses'][200]['content']['application/json'];
+export type BackendSimulation = components['schemas']['Simulation'];
+export type BackendPacketEvent = components['schemas']['PacketEvent'];
+/** Legacy services return only these fields; all additional response fields are optional there. */
+export type LegacySendResponse = Pick<BackendTextResponse, 'msg_id' | 'chunks'>;
 
-/**
- * `reassembled` is retained only for the authored replay and older backend snapshots.
- * The current API reports `awaiting_receipt` before a terminal receipt instead.
- */
+/** Includes the legacy replay status alongside current receipt states. */
 export type ExperimentalMessageStatus = 'awaiting_receipt' | 'receipt_unconfirmed' | 'reassembled';

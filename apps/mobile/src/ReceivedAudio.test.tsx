@@ -34,4 +34,5 @@ it('reflects playing state from the player and shows observed duration', () => {
   render(<ReceivedAudio uri="http://mesh.test/messages/voice/content" />);
   expect(screen.getByLabelText('Pause received audio')).toBeTruthy();
   expect(screen.getByText('0:02 / 0:05')).toBeTruthy();
+  expect(screen.getByText('Verified voice message')).toBeTruthy();
 });

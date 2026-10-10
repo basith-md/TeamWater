@@ -8,7 +8,8 @@
     "ios": "expo start --ios",
     "android": "expo start --android",
     "web": "expo start --web",
-    "export": "expo export --platform all"
+    "export": "expo export --platform all",
+    "publish:preview": "expo install --check && npx eas-cli update --branch preview --environment preview --platform all"
   },
   "dependencies": {
     "@teamwater/core": "0.1.0",
@@ -17,6 +18,7 @@
     "expo-audio": "~57.0.5",
     "expo-document-picker": "~57.0.3",
     "expo-status-bar": "~57.0.1",
+    "expo-updates": "~57.0.25",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",

@@ -8,11 +8,14 @@ export interface MeshLink { from: string; to: string }
 export interface MeshMessage {
   id: string; src: string; dst: string; kind: MediaKind; preview: string; text?: string;
   totalChunks: number; received: number; acked: number;
-  status: BackendMessageStatus | ExperimentalMessageStatus;
+  status: BackendMessageStatus | 'reassembled';
   route: string[]; createdAt: number | null; completedAt?: number; etaSeconds: number | null;
   integrity: 'unverified' | 'verified'; receiptConfirmed: boolean; mediaUrl?: string;
   receiverStatus?: string; radioBytes?: number; lostPackets?: number; retries?: number;
   airtimeSeconds?: number; encodedBytes?: number; transferBytes?: number;
+  framesSent?: BackendMessage['frames_sent'];
+  /** Simulation-scaled elapsed seconds until the receiver verified reconstruction. */
+  receiverVerifiedSeconds?: BackendMessage['receiver_verified_at'];
 }
 export type EventKind = 'packet_enqueued' | 'packet_tx' | 'packet_rx' | 'packet_dropped' | 'packet_retry' | 'chunk_ack' | 'receipt_verified' | 'route_changed' | 'no_route';
 export interface MeshEvent {
@@ -46,4 +49,4 @@ export interface Telemetry {
   retries: number | null; latencyMs: number | null; observedLossRate: number | null;
   bitRate: number | null; rangeMeters: number | null; lossRate: number | null;
 }
-import type { BackendMessage, BackendMessageStatus, ExperimentalMessageStatus } from './backend-types';
+import type { BackendMessage, BackendMessageStatus } from './backend-types';

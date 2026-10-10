@@ -1,0 +1,31 @@
+import { expect, test } from '@playwright/test';
+
+test('recorded browser voice reaches the other phone as playable verified audio', async ({ page }) => {
+  test.skip(!process.env.TEAMWATER_PIPELINE_URL, 'Requires the packet/media backend and Vite proxy.');
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await expect(page.getByRole('status', { name: 'Simulation status' })).toContainText('Live simulation');
+  await expect(page.getByText('6 / 6 nodes online')).toBeVisible();
+  const boss = page.getByTestId('phone-boss');
+  const employee = page.getByTestId('phone-employee');
+  const receivedBefore = await employee.getByLabel('Verified voice playback').count();
+  await boss.getByRole('button', { name: 'Record voice', exact: true }).click();
+  await expect(boss.getByRole('status')).toContainText('Recording 1.');
+  await boss.getByRole('button', { name: 'Stop recording', exact: true }).click();
+  const preview = boss.getByLabel('Recorded voice preview');
+  await expect(preview).toBeVisible();
+  await expect.poll(() => preview.evaluate(node => (node as HTMLAudioElement).readyState)).toBeGreaterThanOrEqual(2);
+  const sending = page.waitForResponse(response => response.url().endsWith('/send/voice') && response.request().method() === 'POST');
+  await boss.getByRole('button', { name: 'Send voice', exact: true }).click();
+  expect((await sending).ok()).toBe(true);
+  await expect(employee.getByLabel('Verified voice playback')).toHaveCount(receivedBefore + 1, { timeout: 90_000 });
+  const received = employee.getByLabel('Verified voice playback').last();
+  await expect.poll(() => received.evaluate(node => (node as HTMLAudioElement).readyState)).toBeGreaterThanOrEqual(1);
+  await received.evaluate(node => (node as HTMLAudioElement).play());
+  await expect.poll(() => received.evaluate(node => (node as HTMLAudioElement).currentTime)).toBeGreaterThan(0);
+  expect(await received.evaluate(node => (node as HTMLAudioElement).error?.message ?? null)).toBeNull();
+  await expect(boss.getByRole('button', { name: 'Record voice', exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
