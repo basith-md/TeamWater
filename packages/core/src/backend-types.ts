@@ -14,3 +14,6 @@ export type BackendSimulation = components['schemas']['Simulation'];
 export type BackendPacketEvent = components['schemas']['PacketEvent'];
 /** Legacy services return only these fields; all additional response fields are optional there. */
 export type LegacySendResponse = Pick<BackendTextResponse, 'msg_id' | 'chunks'>;
+
+/** Includes the legacy replay status alongside current receipt states. */
+export type ExperimentalMessageStatus = 'awaiting_receipt' | 'receipt_unconfirmed' | 'reassembled';

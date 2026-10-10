@@ -1,4 +1,6 @@
 # CHRP Mesh — Backend + Service
+**Backend (live):** [https://teamwater.onrender.com](https://teamwater.onrender.com)
+
 
 The Expo mobile app and browser packet console are documented in [FRONTEND.md](FRONTEND.md). Run `npm ci` and `npm run dev` from this repo root to open the interactive three-panel demo at http://localhost:5173.
 
@@ -113,3 +115,8 @@ python service.py
 Open http://localhost:8000
 
 The service automatically finds the backend in the sibling `backend/` directory.
+The Expo mobile app and browser packet console are documented in [FRONTEND.md](FRONTEND.md). Run `npm ci` and `npm run dev` from this repo root to open the interactive three-panel demo at http://localhost:5173.
+
+## Packet/media implementation
+
+See [packet/media handoff](docs/PACKET_MEDIA_HANDOFF.md) for the implemented protocol, codec requirements, test commands, current limits and AI gateway integration plan. The backend is now Python rather than the original PRD's proposed TypeScript architecture. Voice is encoded with FFmpeg/libopus; it is no longer a truncated upload. Run from the repository root with `python -m uvicorn service.service:app --host 127.0.0.1 --port 8000`.

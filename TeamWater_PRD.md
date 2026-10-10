@@ -190,3 +190,11 @@ Distinguish link ACK, chunk ACK, destination verification, and final sender-obse
 - [Meshtastic radio settings](https://meshtastic.org/docs/overview/radio-settings/)
 - [Reticulum](https://reticulum.network/) — architectural inspiration, not declared integration.
 - [Codec2](https://www.rowetel.com/?page_id=452)
+
+## 16. Implementation update and AI gateway extension
+
+The initial backend uses Python/FastAPI. Preserve its public send endpoints and layer codecs and binary framing beneath them. See `docs/PACKET_MEDIA_HANDOFF.md` for actual implemented behavior and explicitly outstanding requirements; this update does not mark the original exit checklist complete.
+
+New user-approved direction: route text AI requests over the simulated mesh to an internet-connected gateway. That gateway calls Nicrron, traces model behavior through Block Convey PRISM, and sends the actual response back over the same reliable transport. Core media messaging continues without cloud dependencies; AI access specifically requires a reachable working internet gateway.
+
+Request and response have different transport message IDs plus a common application request ID. Gateway execution requires receiver-verified request content. Sender-visible answer completion requires verified response content, independent of request delivery. Use exact lossless compression, concise model-output budgets, gateway-side idempotency and bounded recovery. Gateway discovery, provider integration, request cache, conversation retention and failover are a subsequent workstream; transport encoding is implemented first.
