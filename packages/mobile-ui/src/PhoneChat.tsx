@@ -127,7 +127,7 @@ function MessageBubble({ message, outgoing, mode, sender, renderAudio }: { messa
   const received = Math.max(0, Math.min(chunks, message.received));
   const progress = chunks > 0 ? received / chunks : 0;
   const verified = message.integrity === 'verified';
-  const contentReady = outgoing || (mode === 'replay' ? received === chunks && chunks > 0 && verified : verified || received > 0);
+  const contentReady = outgoing || (mode === 'replay' ? received === chunks && chunks > 0 && verified : verified);
   const verifiedMedia = mode === 'live' && verified && !!message.mediaUrl;
   const statusLabel = outgoing ? deliveryLabel(message) : verified ? 'Receiver verified' : message.status === 'failed' ? 'Transfer failed' : message.status === 'cancelled' ? 'Transfer cancelled' : chunks > 0 && received === chunks ? 'Received · unverified' : 'Receiving…';
   return <View style={[styles.messageRow, outgoing && styles.outgoingRow]}>

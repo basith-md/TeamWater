@@ -90,6 +90,22 @@ export function Topology({ state, message, events }: { state: MeshState; message
   </div>;
 }
 
+function narrate(message: MeshMessage | undefined, events: MeshEvent[]): { title: string; body: string } {
+  if (!message) return { title: 'How this works', body: 'Send a message from either phone. Nothing reaches the other phone instantly: it is squeezed into ~230-byte radio packets, hopped across relay nodes over a slow, lossy radio, and only shown on the far phone once every chunk has arrived and its checksum matches.' };
+  const route = message.route.length ? message.route.join(' → ') : 'the mesh';
+  const drops = events.filter(e => e.kind === 'packet_dropped').length, retries = events.filter(e => e.kind === 'packet_retry').length;
+  const loss = drops || retries ? ` ${drops} packet${drops === 1 ? '' : 's'} got lost on the way and ${retries} ${retries === 1 ? 'was' : 'were'} resent.` : '';
+  if (message.status === 'failed') return { title: 'Transfer failed', body: `The mesh could not get every chunk through along ${route}. The receiving phone shows nothing because it never had the full message.${loss}` };
+  if (message.integrity === 'verified' && message.status === 'delivered') return { title: 'Delivered and verified', body: `All ${message.totalChunks} chunks arrived over ${route}. The receiver rebuilt the message, its checksum matched, and it sent a signed receipt back, so now (and only now) the phone displays it.${loss}` };
+  if (message.status === 'awaiting_receipt' || message.status === 'receipt_unconfirmed') return { title: 'Waiting for the receiver\u2019s proof', body: 'The sender has pushed out every chunk but will not say \u201cdelivered\u201d until the receiver sends back a checksum receipt. Lost receipts are retried.' };
+  return { title: 'In transit', body: `Sending ${message.totalChunks} chunks over ${route} at about 1 kbps. ${message.received}/${message.totalChunks} have reached the receiver so far. Each hop waits for an acknowledgment and resends lost packets; the far phone stays blank until all chunks are in and verified.${loss}` };
+}
+
+function Narrator({ message, events }: { message: MeshMessage | undefined; events: MeshEvent[] }) {
+  const note = narrate(message, events);
+  return <div className="narrator" role="status" aria-label="What is happening"><span className="small-label">WHAT&apos;S HAPPENING</span><strong>{note.title}</strong><p>{note.body}</p></div>;
+}
+
 export function App({ client }: { client: MeshClient }) {
   const state = useMesh(client);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -141,6 +157,7 @@ export function App({ client }: { client: MeshClient }) {
           <div className="mode-note"><CircleHelp size={12}/>Off-grid phones in a local mesh simulation · running simulator required.</div>
 
           <section className="topology-panel"><div className="panel-heading"><div><span className="eyebrow">THE NETWORK</span><h2>Every hop counts.</h2></div><span className="nodes-status"><i/>{state.nodes.filter(node => node.online).length} / {state.nodes.length} nodes online</span></div>
+            <Narrator message={selected} events={events}/>
             <Topology state={state} message={selected} events={events}/>
             <div className="route-detail"><div><span className="small-label">SELECTED ROUTE</span><div className="route-path" aria-label="Selected route">{selected ? (selected.route.length ? selected.route.join(' → ') : 'Route unavailable') : 'Send a message to trace its route'}</div></div><div className={`route-status ${verified ? 'verified' : ''}`}>{verified ? <ShieldCheck size={15}/> : <Activity size={15}/>}<span>{selected ? deliveryLabel(selected) : 'Ready when you are'}</span></div></div>
           </section>

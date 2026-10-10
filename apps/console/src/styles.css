@@ -17,3 +17,7 @@
 @media(prefers-reduced-motion:reduce){.recording-light{animation:none}}
 
 .phone-profile{border-radius:10px;overflow:hidden;margin-bottom:18px}.network-conversation{text-align:center;padding:12px 20px 15px;margin-bottom:12px}.network-conversation-title{display:flex;justify-content:center;align-items:center;gap:18px}.network-conversation h2{font-size:26px;letter-spacing:-.7px;margin:0}.network-conversation p{margin:6px 0 16px;color:#898b7e;font-size:12px}.network-mesh-badge{display:inline-flex;align-items:center;gap:6px;padding:9px 12px;background:#eaece2;border-radius:8px;color:#626e5b;font-size:10px;font-weight:700;letter-spacing:1.5px}.network-mesh-badge i{width:5px;height:5px;border-radius:50%;background:#719a7e}.network-conversation-status{display:flex;justify-content:center;align-items:center;gap:28px;font-size:11px;color:#bc633a}.network-conversation-status .connection{font-size:11px}@media(max-width:650px){.network-conversation h2{font-size:23px}.network-conversation-title{gap:12px}}
+
+.narrator { margin: 0 0 12px; padding: 12px 14px; border: 1px solid #e4c7b6; border-radius: 8px; background: #f6efe6; color: #3b3a33; }
+.narrator strong { display: block; margin: 4px 0; font-size: 15px; }
+.narrator p { margin: 0; font-size: 12.5px; line-height: 1.5; color: #5d5a50; }
