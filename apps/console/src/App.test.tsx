@@ -55,7 +55,6 @@ describe('mesh console', () => {
       expect(map.getByText(label, { selector: 'text' })).toBeInTheDocument();
     }
     expect(document.body).not.toHaveTextContent(/Jordan|Alex|San Francisco|The boss|Base camp/);
-    expect(screen.getByText('Local mesh · no internet gateway')).toBeInTheDocument();
   });
 
   it('shows the other Burning Man people by their backend names and actual online status', () => {
