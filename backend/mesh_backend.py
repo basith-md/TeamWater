@@ -48,6 +48,10 @@ LOSS_RATE = 0.20
 BASE_RATE_BPS = 1070
 RANGE = 180
 MAX_HOPS = 8
+LINK_RETRIES = 3
+# A hop-level acknowledgement is a header-only frame; charge real airtime for it.
+LINK_ACK_BYTES = 16
+PHY_OVERHEAD_S = 0.05
 
 
 @dataclass
@@ -92,6 +96,7 @@ class MessageProgress:
     active_window: int = 0
     active_link: list = field(default_factory=list)
     route_available: bool = True
+    link_retries: int = 0
 
 
 class MeshBackend:
@@ -106,14 +111,19 @@ class MeshBackend:
         radio_range=180,
         drop_predicate=None,
         use_fec=True,
+        link_retries=LINK_RETRIES,
     ):
         if (
             not 0 <= loss_rate <= 1
             or bit_rate <= 0
             or playback_speed <= 0
             or max_attempts < 1
+            or not 0 <= link_retries <= 7
         ):
             raise ValueError("Invalid simulation configuration")
+        # Per-hop retransmissions (Meshtastic next-hop routing retries a hop up to 3
+        # times). End-to-end selective ACKs still guarantee the final outcome.
+        self.link_retries = link_retries
         self.loss_rate, self.bit_rate = loss_rate, bit_rate
         self.playback_speed, self.max_attempts = playback_speed, max_attempts
         self.radio_range, self.seed = radio_range, seed
@@ -226,47 +236,84 @@ class MeshBackend:
             self.queue_depth += 1
             async with self._channel:
                 self.queue_depth -= 1
-                if b not in self.connections[a]:
-                    return None
-                wire = current.serialize()
-                # Approximate fixed PHY overhead; serialized app bytes reported separately.
-                duration = len(wire) * 8 / self.bit_rate + 0.05
-                msg.radio_bytes += len(wire)
-                msg.frames_sent += 1
-                msg.active_link = [a, b]
-                msg.airtime_seconds += duration
+                delivered = await self._hop(current, msg, a, b)
+            if delivered is None:
+                msg.active_link = []
+                return None
+            current = delivered
+        msg.active_link = []
+        return current
+
+    async def _on_air(self, msg, nbytes):
+        """Charge airtime for one transmission on the shared channel."""
+        # Approximate fixed PHY overhead; serialized app bytes reported separately.
+        duration = nbytes * 8 / self.bit_rate + PHY_OVERHEAD_S
+        msg.radio_bytes += nbytes
+        msg.frames_sent += 1
+        msg.airtime_seconds += duration
+        await asyncio.sleep(duration / self.playback_speed)
+        self.simulation_time += duration
+
+    async def _hop(self, current, msg, a, b):
+        """One link-layer exchange: send, wait for the hop ACK, retry the hop.
+
+        Returns the frame as the next node parsed it, or None if every attempt on
+        this link was lost. A lost hop ACK costs a duplicate transmission but the
+        next node already holds the frame, so forwarding still proceeds.
+        """
+        wire = current.serialize()
+        received = None
+        for attempt in range(1 + self.link_retries):
+            if b not in self.connections[a]:
+                break
+            if attempt:
+                msg.link_retries += 1
+            msg.active_link = [a, b]
+            self._event(
+                "packet_tx",
+                msg,
+                source=a,
+                destination=b,
+                kind=current.kind,
+                chunk=current.index,
+                frame_bytes=len(wire),
+                link_attempt=attempt + 1,
+            )
+            await self._on_air(msg, len(wire))
+            lost = self.rng.random() < self.loss_rate
+            if self.drop_predicate and self.drop_predicate(current, a, b):
+                lost = True
+            if lost or b not in self.connections[a]:
+                msg.lost_packets += 1
                 self._event(
-                    "packet_tx",
+                    "packet_dropped",
                     msg,
                     source=a,
                     destination=b,
-                    kind=frame.kind,
-                    chunk=frame.index,
-                    frame_bytes=len(wire),
+                    kind=current.kind,
+                    link_attempt=attempt + 1,
                 )
-                await asyncio.sleep(duration / self.playback_speed)
-                self.simulation_time += duration
-                lost = self.rng.random() < self.loss_rate
-                if self.drop_predicate and self.drop_predicate(current, a, b):
-                    lost = True
-                if lost or b not in self.connections[a]:
-                    msg.lost_packets += 1
-                    self._event(
-                        "packet_dropped", msg, source=a, destination=b, kind=frame.kind
-                    )
-                    return None
+                continue
+            if received is None:
                 # Every relay reads the actual serialized bytes and forwards a fresh frame.
-                current = replace(Frame.deserialize(wire), ttl=current.ttl - 1)
+                received = replace(Frame.deserialize(wire), ttl=current.ttl - 1)
                 self._event(
                     "packet_rx",
                     msg,
                     source=a,
                     destination=b,
-                    kind=frame.kind,
-                    chunk=frame.index,
+                    kind=current.kind,
+                    chunk=current.index,
                 )
-        msg.active_link = []
-        return current
+            if not self.link_retries:
+                break  # no hop-level ARQ configured: nothing to acknowledge
+            await self._on_air(msg, LINK_ACK_BYTES)
+            if self.rng.random() < self.loss_rate:
+                msg.lost_packets += 1
+                self._event("hop_ack_dropped", msg, source=b, destination=a)
+                continue
+            break
+        return received
 
     async def send_message(
         self, src, dst, data, media_type="text", preview="", metadata=None
@@ -454,6 +501,17 @@ class MeshBackend:
     def _chunk_data(self, data):
         return split_transfer(data)
 
+    def _hop_cost(self, nbytes):
+        """Expected airtime of one hop exchange and probability the hop succeeds."""
+        p, r = self.loss_rate, self.link_retries
+        tx = nbytes * 8 / self.bit_rate + PHY_OVERHEAD_S
+        if r == 0:
+            return tx, 1 - p
+        ack = LINK_ACK_BYTES * 8 / self.bit_rate + PHY_OVERHEAD_S
+        q = (1 - p) ** 2  # frame and its hop ACK both survive
+        tries = (1 - (1 - q) ** (r + 1)) / q if q else r + 1
+        return tries * (tx + (1 - p) * ack), 1 - p ** (r + 1)
+
     def get_nodes(self):
         return [{"id": n.id, "name": n.name} for n in self.nodes.values()]
 
@@ -471,15 +529,17 @@ class MeshBackend:
                 and self.loss_rate < 1
                 and m.status not in ("failed", "receipt_unconfirmed", "cancelled")
             ):
-                # Conservative model excludes parity benefit and includes selective ACK traffic.
-                one_way = (1 - self.loss_rate) ** hops
+                # Conservative model excludes parity benefit and includes selective
+                # ACK traffic plus per-hop retransmissions and hop ACK airtime.
+                data_hop, hop_ok = self._hop_cost(230)
+                ctrl_hop, _ = self._hop_cost(64)
+                one_way = hop_ok**hops
                 windows = math.ceil(remaining / WINDOW_SIZE)
-                data_time = (
-                    remaining * hops * (230 * 8 / self.bit_rate + 0.05) / one_way
-                )
-                control_time = (
-                    windows * 2 * hops * (64 * 8 / self.bit_rate + 0.05) / (one_way**2)
-                )
+                data_time = remaining * hops * data_hop / one_way
+                if self.use_fec:
+                    # One parity frame per window costs airtime even when unused.
+                    data_time *= 1 + 1 / WINDOW_SIZE
+                control_time = windows * 2 * hops * ctrl_hop / (one_way**2)
                 eta = round(data_time + control_time, 1)
             messages[mid] = dict(
                 msg_id=mid,
@@ -506,6 +566,7 @@ class MeshBackend:
                 fec_recovered=m.fec_recovered,
                 data_retries=m.data_retries,
                 control_retries=m.control_retries,
+                link_retries=m.link_retries,
                 frames_sent=m.frames_sent,
                 received_ids=sorted(m.received_chunks),
                 acked_ids=sorted(m.acked_chunks),
@@ -550,9 +611,10 @@ class MeshBackend:
                 simulation_time=self.simulation_time,
                 queue_depth=self.queue_depth,
                 fec=self.use_fec,
+                link_retries=self.link_retries,
                 window_size=WINDOW_SIZE,
                 range_meters=self.radio_range,
-                model="shared channel, store-and-forward, 50ms overhead per hop",
+                model="shared channel, store-and-forward, per-hop ACK + retry, 50ms overhead per frame",
             ),
             events=list(self.events)[-100:],
         )

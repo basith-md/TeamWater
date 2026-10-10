@@ -232,6 +232,8 @@ export interface components {
             fec_recovered?: number;
             data_retries?: number;
             control_retries?: number;
+            /** @description Per-hop retransmissions spent on this message */
+            link_retries?: number;
             frames_sent?: number;
             airtime_seconds?: number;
             elapsed_seconds?: number;
@@ -289,6 +291,8 @@ export interface components {
             playback_speed?: number;
             radio_range?: number;
             use_fec?: boolean;
+            /** @description Per-hop retransmissions before a relay gives up on a frame */
+            link_retries?: number;
         };
         Simulation: {
             loss_rate: number;
@@ -301,6 +305,7 @@ export interface components {
             queue_depth: number;
             model: string;
             fec: boolean;
+            link_retries?: number;
         };
         MediaMetadata: {
             original_bytes?: number;

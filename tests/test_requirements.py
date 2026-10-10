@@ -63,7 +63,10 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return True
             return False
 
-        b = MeshBackend(loss_rate=0, playback_speed=1e9, drop_predicate=drop)
+        # link_retries=0 isolates end-to-end selective retry from hop-level ARQ.
+        b = MeshBackend(
+            loss_rate=0, playback_speed=1e9, drop_predicate=drop, link_retries=0
+        )
         mid, m, data = await self.send(b)
         self.assertEqual(m.status, "delivered")
         self.assertEqual(m.data_retries, 2)
@@ -79,7 +82,9 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return True
             return False
 
-        b = MeshBackend(loss_rate=0, playback_speed=1e9, drop_predicate=drop)
+        b = MeshBackend(
+            loss_rate=0, playback_speed=1e9, drop_predicate=drop, link_retries=0
+        )
         _, m, _ = await self.send(b)
         self.assertEqual(m.status, "delivered")
         self.assertEqual(m.data_retries, 0)

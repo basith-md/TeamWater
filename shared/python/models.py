@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, confloat, conint
+from pydantic import BaseModel, ConfigDict, Field, confloat, conint
 
 
 class NodeSummary(BaseModel):
@@ -57,6 +57,9 @@ class SimulationConfig(BaseModel):
     playback_speed: confloat(ge=1.0, le=1000.0) | None = None
     radio_range: confloat(ge=50.0, le=500.0) | None = None
     use_fec: bool | None = None
+    link_retries: conint(ge=0, le=7) | None = Field(
+        None, description='Per-hop retransmissions before a relay gives up on a frame'
+    )
 
 
 class Simulation(BaseModel):
@@ -70,6 +73,7 @@ class Simulation(BaseModel):
     queue_depth: int
     model: str
     fec: bool
+    link_retries: int | None = None
 
 
 class MediaMetadata(BaseModel):
@@ -141,6 +145,9 @@ class Message(BaseModel):
     fec_recovered: int | None = None
     data_retries: int | None = None
     control_retries: int | None = None
+    link_retries: int | None = Field(
+        None, description='Per-hop retransmissions spent on this message'
+    )
     frames_sent: int | None = None
     airtime_seconds: float | None = None
     elapsed_seconds: float | None = None
