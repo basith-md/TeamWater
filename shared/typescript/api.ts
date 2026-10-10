@@ -47,7 +47,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Send a compressed voice note across the mesh */
+        /** Send first-five-seconds Codec2 voice across the mesh; verified playback is WAV */
         post: operations["sendVoice"];
         delete?: never;
         options?: never;
@@ -116,6 +116,40 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["configureSimulation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/simulation/routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable or disable distance-aware ETX routing */
+        post: operations["configureRouting"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/simulation/nodes/{node_id}/position": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move an idle simulated node in meter coordinates */
+        post: operations["moveNode"];
         delete?: never;
         options?: never;
         head?: never;
@@ -247,6 +281,7 @@ export interface components {
             route_history?: string[][];
             active_link?: string[];
             route_available?: boolean;
+            route_proof?: components["schemas"]["RouteProof"] | null;
             receiver_verified_at?: number | null;
             content_url?: string | null;
             error?: string;
@@ -284,6 +319,41 @@ export interface components {
             chunks: number;
             metadata: components["schemas"]["MediaMetadata"];
         };
+        NodePosition: {
+            /** @description Horizontal position in meters */
+            x: number;
+            /** @description Vertical position in meters */
+            y: number;
+        };
+        RoutingConfig: {
+            distance_routing: boolean;
+        };
+        LinkMetric: {
+            source: string;
+            destination: string;
+            distance: number;
+            loss: number;
+            etx: number;
+        };
+        RouteAlternative: {
+            path: string[];
+            hops: number;
+            cost: number;
+            distance: number;
+            extra_cost: number;
+        };
+        RouteProof: {
+            metric: string;
+            chosen: string[];
+            chosen_cost: number;
+            chosen_distance: number;
+            candidates_checked: number;
+            verified_by: string[];
+            dijkstra_cost: number | null;
+            optimal: boolean;
+            links: components["schemas"]["LinkMetric"][];
+            alternatives: components["schemas"]["RouteAlternative"][];
+        };
         SimulationConfig: {
             loss_rate?: number;
             bit_rate?: number;
@@ -306,6 +376,8 @@ export interface components {
             model: string;
             fec: boolean;
             link_retries?: number;
+            distance_routing?: boolean;
+            link_metrics?: components["schemas"]["LinkMetric"][];
         };
         MediaMetadata: {
             original_bytes?: number;
@@ -319,7 +391,11 @@ export interface components {
             target_bitrate_bps?: number;
             encoded_bitrate_bps?: number;
             codec?: string;
+            codec2_mode?: number;
+            sample_rate?: number;
+            sample_count?: number;
             mime?: string;
+            playback_mime?: string;
             media_type?: string;
             quality_label?: string;
             clip_policy?: string;
@@ -612,6 +688,91 @@ export interface operations {
             };
         };
     };
+    configureRouting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoutingConfig"];
+            };
+        };
+        responses: {
+            /** @description Updated simulation settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Simulation"];
+                };
+            };
+            /** @description A transfer is active */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid routing configuration */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    moveNode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodePosition"];
+            };
+        };
+        responses: {
+            /** @description Updated simulation settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Simulation"];
+                };
+            };
+            /** @description Unknown node */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A transfer is active */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid position or coordinates outside 0 through 10000 meters */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     resetSimulation: {
         parameters: {
             query?: never;
@@ -681,7 +842,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Verified receiver bytes only; text is decompressed */
+            /** @description Verified receiver content only; text is decompressed and Codec2 voice is decoded to mono PCM WAV */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -690,7 +851,7 @@ export interface operations {
                     "text/plain": string;
                     "application/json": string;
                     "image/webp": string;
-                    "audio/ogg": string;
+                    "audio/wav": string;
                     "video/mp4": string;
                     "application/octet-stream": string;
                 };

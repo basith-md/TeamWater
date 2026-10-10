@@ -1,10 +1,24 @@
-import type { MeshEvent, MeshLink, MeshMessage, MeshNode } from './types';
+import type { LinkMetric, MeshEvent, MeshLink, MeshMessage, MeshNode, RouteProof } from './types';
 import type { BackendMessage, BackendMessageStatus, BackendNode, BackendState } from './backend-types';
 
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const string = (value: unknown): value is string => typeof value === 'string';
 const statuses = Object.keys({ sending: true, in_transit: true, delivered: true, failed: true, awaiting_receipt: true, receipt_unconfirmed: true, cancelled: true } satisfies Record<BackendMessageStatus, true>).concat('reassembled');
+const num = (v: unknown, d = 0) => (finite(v) ? v : d);
+function parseLink(l: unknown): LinkMetric | null {
+  if (!object(l) || !string(l.source) || !string(l.destination) || !finite(l.distance) || !finite(l.loss) || !finite(l.etx)) return null;
+  return { from: l.source, to: l.destination, distance: l.distance, loss: l.loss, etx: l.etx };
+}
+function parseProof(p: unknown): RouteProof | undefined {
+  if (!object(p) || !Array.isArray(p.chosen) || !p.chosen.every(string) || !Array.isArray(p.alternatives) || !Array.isArray(p.links)) return undefined;
+  return {
+    metric: string(p.metric) ? p.metric : '', chosen: p.chosen as string[], chosenCost: num(p.chosen_cost), chosenDistance: num(p.chosen_distance),
+    candidatesChecked: num(p.candidates_checked), verifiedBy: Array.isArray(p.verified_by) ? p.verified_by.filter(string) : [], optimal: p.optimal === true,
+    links: p.links.map(parseLink).filter((l): l is LinkMetric => !!l),
+    alternatives: p.alternatives.filter(object).filter(a => Array.isArray(a.path) && a.path.every(string)).map(a => ({ path: a.path as string[], hops: num(a.hops), cost: num(a.cost), distance: num(a.distance), extraCost: num(a.extra_cost) })),
+  };
+}
 const kinds = Object.keys({ text: true, image: true, voice: true, video: true, ai_request: true, ai_response: true } satisfies Record<BackendMessage['media_type'], true>);
 
 /** Legacy service snapshots contain aggregate progress only, never verified content. */
@@ -39,6 +53,7 @@ export function normalizeSnapshot(value: unknown) {
       route: m.route as BackendState['messages'][string]['route'], createdAt: finite(m.created_at) && Number.isFinite(m.created_at * 1000) ? m.created_at * 1000 : null,
       etaSeconds: finite(m.eta) ? Math.max(0, m.eta) : null,
       integrity: verified ? 'verified' : 'unverified', receiptConfirmed: verified && m.status === 'delivered',
+      ...(parseProof(m.route_proof) ? { routeProof: parseProof(m.route_proof) } : {}),
       ...(string(m.receiver_status) ? { receiverStatus: m.receiver_status } : {}),
       ...(finite(m.radio_bytes) && m.radio_bytes >= 0 ? { radioBytes: m.radio_bytes } : {}),
       ...(finite(m.lost_packets) && m.lost_packets >= 0 ? { lostPackets: m.lost_packets } : {}),
@@ -70,6 +85,9 @@ export function normalizeSnapshot(value: unknown) {
     simulationTime: simulation && finite(simulation.simulation_time) ? simulation.simulation_time : null,
     bitRate: simulation && finite(simulation.bit_rate) && simulation.bit_rate > 0 ? simulation.bit_rate : null,
     lossRate: simulation && finite(simulation.loss_rate) && simulation.loss_rate >= 0 && simulation.loss_rate <= 1 ? simulation.loss_rate : null,
+    playbackSpeed: simulation && finite(simulation.playback_speed) && simulation.playback_speed > 0 ? simulation.playback_speed : 1,
+    distanceRouting: !!simulation && simulation.distance_routing === true,
+    linkMetrics: simulation && Array.isArray(simulation.link_metrics) ? simulation.link_metrics.map(parseLink).filter((l): l is LinkMetric => !!l) : [],
     rangeMeters: simulation && finite(simulation.range_meters) && simulation.range_meters > 0 ? simulation.range_meters : null,
   };
 }

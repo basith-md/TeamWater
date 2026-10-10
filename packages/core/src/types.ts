@@ -11,6 +11,7 @@ export interface MeshMessage {
   status: BackendMessageStatus | 'reassembled';
   route: string[]; createdAt: number | null; completedAt?: number; etaSeconds: number | null;
   integrity: 'unverified' | 'verified'; receiptConfirmed: boolean; mediaUrl?: string;
+  routeProof?: RouteProof;
   receiverStatus?: string; radioBytes?: number; lostPackets?: number; retries?: number;
   airtimeSeconds?: number; encodedBytes?: number; transferBytes?: number;
   framesSent?: BackendMessage['frames_sent'];
@@ -23,6 +24,12 @@ export interface MeshEvent {
   from: string; to: string; packetId: string; bytes: number | null; detail?: string;
   packetKind?: number; chunk?: number;
 }
+export interface LinkMetric { from: string; to: string; distance: number; loss: number; etx: number }
+export interface RouteProof {
+  metric: string; chosen: string[]; chosenCost: number; chosenDistance: number; candidatesChecked: number;
+  verifiedBy: string[]; optimal: boolean; links: LinkMetric[];
+  alternatives: { path: string[]; hops: number; cost: number; distance: number; extraCost: number }[];
+}
 export interface MeshConfig { bitRate: number | null; lossRate: number | null; rangeMeters: number | null; playbackSpeed: number }
 export interface MeshState {
   mode: Mode; connection: Connection; endpoint: string; nodes: MeshNode[]; links: MeshLink[];
@@ -30,6 +37,7 @@ export interface MeshState {
   capabilities: { packetEvents: boolean; controls: boolean; verifiedContent: boolean };
   scenario: Scenario; error: string | null;
   eventHistoryComplete?: boolean;
+  routing?: { distanceAware: boolean; links: LinkMetric[] };
 }
 export interface MediaAsset { uri: string; name: string; type: string; file?: Blob }
 export interface MeshClient {
@@ -41,6 +49,8 @@ export interface MeshClient {
   setScenario(scenario: Scenario): void;
   setPlaybackSpeed(speed: number): void;
   reset(): void;
+  setDistanceRouting?(on: boolean): Promise<void>;
+  moveNode?(nodeId: string, x: number, y: number): Promise<void>;
   sendText(src: string, dst: string, text: string): Promise<string>;
   sendMedia(src: string, dst: string, kind: 'image' | 'voice', asset: MediaAsset): Promise<string>;
 }

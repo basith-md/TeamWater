@@ -330,3 +330,31 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
             (await self.client.get(f"/messages/{mid}/content")).status_code, 409
         )
         self.assertEqual(b.messages[mid].status, "failed")
+
+    async def test_node_position_accepts_playa_coordinates_and_rejects_bounds(self):
+        response = await self.client.post(
+            "/simulation/nodes/node0/position", json={"x": 2800, "y": 800}
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        state = (await self.client.get("/state")).json()
+        node = next(node for node in state["nodes"] if node["id"] == "node0")
+        self.assertEqual((node["x"], node["y"]), (2800, 800))
+        for coordinates in [{"x": -1, "y": 800}, {"x": 2800, "y": 10001}]:
+            response = await self.client.post(
+                "/simulation/nodes/node0/position", json=coordinates
+            )
+            self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual((self.service.backend.nodes["node0"].x,
+                          self.service.backend.nodes["node0"].y), (2800, 800))
+
+    async def test_node_position_rejects_move_during_actual_transfer(self):
+        self.service.backend.configure(playback_speed=0.01)
+        response = await self.client.post(
+            "/send/text", data={"src": "node0", "dst": "node4", "text": "In transit"}
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        response = await self.client.post(
+            "/simulation/nodes/node0/position", json={"x": 2800, "y": 800}
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(self.service.backend.nodes["node0"].x, 80)

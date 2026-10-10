@@ -30,9 +30,23 @@ class FakeClient implements MeshClient {
 }
 
 describe('PhoneChat', () => {
+  it('grows for measured multiline content without remounting the recorder and shrinks when cleared', () => {
+    render(<PhoneChat client={new FakeClient()} role="boss" compact renderVoiceRecorder={() => <Text>Recorder stays ready</Text>}/>);
+    const input = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+    const recorder = screen.getByText('Recorder stays ready');
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, value: 96 });
+    fireEvent.change(input, { target: { value: 'First line\nSecond line\nThird line\nFourth line' } });
+    expect(parseFloat(window.getComputedStyle(input).height)).toBeGreaterThanOrEqual(96);
+    expect(input.value).toBe('First line\nSecond line\nThird line\nFourth line');
+    expect(screen.getByText('Recorder stays ready')).toBe(recorder);
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, value: 40 });
+    fireEvent.change(input, { target: { value: '' } });
+    expect(parseFloat(window.getComputedStyle(input).height)).toBe(56);
+  });
+
   it.each([
-    { role: 'boss' as const, name: 'Malcome', title: 'User 2', initial: 'M', contact: 'Basith', src: 'node0', dst: 'node4', ownPlace: 'Deep playa · Mayan Warrior', contactPlace: 'Playa airport' },
-    { role: 'employee' as const, name: 'Basith', title: 'User 1', initial: 'B', contact: 'Malcome', src: 'node4', dst: 'node0', ownPlace: 'Playa airport', contactPlace: 'Deep playa · Mayan Warrior' },
+    { role: 'boss' as const, name: 'Malcome', title: 'User 2', initial: 'M', contact: 'Basith', src: 'node0', dst: 'node4', ownPlace: 'Deep Playa · Mayan Warrior', contactPlace: 'Playa airport' },
+    { role: 'employee' as const, name: 'Basith', title: 'User 1', initial: 'B', contact: 'Malcome', src: 'node4', dst: 'node0', ownPlace: 'Playa airport', contactPlace: 'Deep Playa · Mayan Warrior' },
   ])('shows the playa identity and routes $name messages to $contact', async ({ role, name, title, initial, contact, src, dst, ownPlace, contactPlace }) => {
     const client = new FakeClient();
     client.publish([message({ src: dst, dst: src, status: 'sending', received: 0 })]);

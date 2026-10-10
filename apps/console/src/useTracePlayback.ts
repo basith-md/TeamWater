@@ -49,3 +49,16 @@ export function useTracePlayback(events: MeshEvent[], key: string) {
   useEffect(() => () => clearTimer(), []);
   return { ...view, replay: () => consume(true) };
 }
+
+/** The radio is shared: show the newest TX only until its matching RX/drop. */
+export function liveTransmission(events: MeshEvent[], terminal: boolean): MeshEvent | null {
+  if (terminal) return null;
+  let active: MeshEvent | null = null;
+  for (const event of [...events].sort((a, b) => a.sequence - b.sequence)) {
+    if (event.kind === 'packet_tx') active = event;
+    else if (active && event.kind === 'packet_rx' &&
+      event.messageId === active.messageId && event.from === active.from && event.to === active.to &&
+      event.packetKind === active.packetKind && (event.chunk === undefined || event.chunk === active.chunk)) active = null;
+  }
+  return active;
+}

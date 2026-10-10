@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import heapq
 import math
 import random
 import time
@@ -96,6 +97,8 @@ class MessageProgress:
     active_window: int = 0
     active_link: list = field(default_factory=list)
     route_available: bool = True
+    pinned_route: Optional[list] = None
+    route_proof: Optional[dict] = None
     link_retries: int = 0
 
 
@@ -112,6 +115,7 @@ class MeshBackend:
         drop_predicate=None,
         use_fec=True,
         diverse_routes=False,
+        distance_routing=False,
         link_retries=LINK_RETRIES,
     ):
         if (
@@ -133,6 +137,7 @@ class MeshBackend:
         self.drop_predicate = drop_predicate
         self.use_fec = use_fec
         self.diverse_routes = diverse_routes
+        self.distance_routing = distance_routing
         self.nodes = {}
         self.connections = defaultdict(set)
         self.messages = {}
@@ -192,6 +197,12 @@ class MeshBackend:
         self._update_connections()
         self._notify()
 
+    def move_node(self, node_id, x, y):
+        node = self.nodes[node_id]
+        node.x, node.y = float(x), float(y)
+        self._update_connections()
+        self._notify()
+
     def set_node_online(self, node_id, online):
         self.nodes[node_id].online = online
         self._update_connections()
@@ -239,15 +250,135 @@ class MeshBackend:
         walk([source])
         return found
 
+    def _distance(self, a, b):
+        na, nb = self.nodes[a], self.nodes[b]
+        return math.hypot(na.x - nb.x, na.y - nb.y)
+
+    def _link_loss(self, a, b):
+        """Per-link loss. With distance routing on, loss grows with distance squared."""
+        if not self.distance_routing:
+            return self.loss_rate
+        ratio = self._distance(a, b) / self.radio_range
+        return min(0.9, self.loss_rate * 2 * ratio * ratio)
+
+    def _link_etx(self, a, b):
+        """Expected transmissions for one hop: the frame and its ACK must both get through."""
+        return 1 / (1 - self._link_loss(a, b)) ** 2
+
+    def _path_cost(self, path):
+        return sum(self._link_etx(a, b) for a, b in zip(path, path[1:]))
+
+    def _dijkstra_cost(self, source, destination):
+        best = {source: 0.0}
+        heap = [(0.0, source)]
+        while heap:
+            cost, node = heapq.heappop(heap)
+            if node == destination:
+                return cost
+            if cost > best.get(node, math.inf):
+                continue
+            for nxt in self.connections[node]:
+                new = cost + self._link_etx(node, nxt)
+                if new < best.get(nxt, math.inf):
+                    best[nxt] = new
+                    heapq.heappush(heap, (new, nxt))
+        return None
+
+    def _all_paths(self, source, destination):
+        found = []
+
+        def walk(path):
+            if path[-1] == destination:
+                found.append(path)
+                return
+            if len(path) - 1 >= MAX_HOPS:
+                return
+            for nxt in sorted(self.connections[path[-1]]):
+                if nxt not in path:
+                    walk(path + [nxt])
+
+        walk([source])
+        return found
+
+    def _optimal_route(self, source, destination):
+        """Cheapest path by expected transmissions, plus evidence that it is the minimum."""
+        if not self.nodes[source].online or not self.nodes[destination].online:
+            return [], None
+        paths = self._all_paths(source, destination)
+        if not paths:
+            return [], None
+        scored = sorted(
+            ((round(self._path_cost(p), 9), len(p) - 1, p) for p in paths),
+            key=lambda item: item[:2] + (item[2],),
+        )
+        best_cost, _, best = scored[0]
+        dijkstra = self._dijkstra_cost(source, destination)
+        proof = dict(
+            metric="expected transmissions (ETX): sum over hops of 1/(1-loss)^2, "
+            "where loss rises with link distance",
+            chosen=best,
+            chosen_cost=round(best_cost, 3),
+            chosen_distance=round(sum(self._distance(a, b) for a, b in zip(best, best[1:])), 1),
+            candidates_checked=len(scored),
+            verified_by=["exhaustive search of every loop-free path", "dijkstra"],
+            dijkstra_cost=None if dijkstra is None else round(dijkstra, 3),
+            optimal=dijkstra is not None and abs(dijkstra - best_cost) < 1e-6,
+            links=[
+                dict(
+                    source=a,
+                    destination=b,
+                    distance=round(self._distance(a, b), 1),
+                    loss=round(self._link_loss(a, b), 3),
+                    etx=round(self._link_etx(a, b), 3),
+                )
+                for a, b in zip(best, best[1:])
+            ],
+            alternatives=[
+                dict(
+                    path=p,
+                    hops=h,
+                    cost=round(c, 3),
+                    distance=round(sum(self._distance(a, b) for a, b in zip(p, p[1:])), 1),
+                    extra_cost=round(c - best_cost, 3),
+                )
+                for c, h, p in scored[1:7]
+            ],
+        )
+        return best, proof
+
+    def link_metrics(self):
+        seen, out = set(), []
+        for a, neighbors in self.connections.items():
+            for b in neighbors:
+                if (b, a) in seen:
+                    continue
+                seen.add((a, b))
+                out.append(
+                    dict(
+                        source=a,
+                        destination=b,
+                        distance=round(self._distance(a, b), 1),
+                        loss=round(self._link_loss(a, b), 3),
+                        etx=round(self._link_etx(a, b), 3),
+                    )
+                )
+        return out
+
     def _pick_route(self, msg, source, destination):
-        """Pin one randomly chosen route per message; reroute only if it breaks."""
-        if not self.diverse_routes:
+        """Pin one route per message; reroute only if it breaks."""
+        if self.distance_routing:
+            forward = msg.pinned_route
+            if not self._path_valid(forward):
+                forward, msg.route_proof = self._optimal_route(msg.src, msg.dst)
+                msg.pinned_route = forward or None
+        elif self.diverse_routes:
+            forward = msg.pinned_route
+            if not self._path_valid(forward):
+                options = self._candidate_routes(msg.src, msg.dst)
+                forward = self._route_rng.choice(options) if options else None
+                msg.pinned_route = forward
+        else:
             return self._route(source, destination)
-        forward = getattr(msg, "pinned_route", None)
-        if not self._path_valid(forward):
-            options = self._candidate_routes(msg.src, msg.dst)
-            forward = self._route_rng.choice(options) if options else None
-            msg.pinned_route = forward
         if not forward:
             return []
         if (source, destination) == (forward[0], forward[-1]):
@@ -335,7 +466,7 @@ class MeshBackend:
                 link_attempt=attempt + 1,
             )
             await self._on_air(msg, len(wire))
-            lost = self.rng.random() < self.loss_rate
+            lost = self.rng.random() < self._link_loss(a, b)
             if self.drop_predicate and self.drop_predicate(current, a, b):
                 lost = True
             if lost or b not in self.connections[a]:
@@ -363,7 +494,7 @@ class MeshBackend:
             if not self.link_retries:
                 break  # no hop-level ARQ configured: nothing to acknowledge
             await self._on_air(msg, LINK_ACK_BYTES)
-            if self.rng.random() < self.loss_rate:
+            if self.rng.random() < self._link_loss(a, b):
                 msg.lost_packets += 1
                 self._event("hop_ack_dropped", msg, source=b, destination=a)
                 continue
@@ -625,6 +756,7 @@ class MeshBackend:
                     i for i in range(m.total_chunks) if i not in m.received_chunks
                 ],
                 active_link=m.active_link,
+                route_proof=m.route_proof,
                 route_available=bool(route),
                 elapsed_seconds=round(
                     (
@@ -665,6 +797,8 @@ class MeshBackend:
                 link_retries=self.link_retries,
                 window_size=WINDOW_SIZE,
                 range_meters=self.radio_range,
+                distance_routing=self.distance_routing,
+                link_metrics=self.link_metrics(),
                 model="shared channel, store-and-forward, per-hop ACK + retry, 50ms overhead per frame",
             ),
             events=list(self.events)[-100:],

@@ -45,11 +45,81 @@ function makeClient(overrides: Partial<MeshState> = {}): MeshClient {
 }
 
 describe('mesh console', () => {
+  it('shows selected message verification without claiming a cryptographic signature', () => {
+    render(<App client={makeClient({ mode: 'live', messages: { alpha: {
+      ...message('alpha', ['node0', 'node2', 'node4']), status: 'delivered', received: 2,
+      integrity: 'verified', receiptConfirmed: true,
+    } } })}/>);
+    const summary = screen.getByRole('status', { name: 'Selected message' });
+    expect(summary).toHaveTextContent('Delivered · verified by receiver');
+    expect(summary).not.toHaveTextContent(/signed|only now/i);
+  });
+
+  it('shows receipt-unconfirmed delivery accurately despite receiver verification', () => {
+    const delivered = { ...message('alpha', ['node0', 'node4']), integrity: 'verified' as const, status: 'receipt_unconfirmed' as const, received: 2 };
+    const view = render(<App client={makeClient({ mode: 'live', messages: { alpha: delivered } })}/>);
+    expect(screen.getByRole('status', { name: 'Selected message' })).toHaveTextContent('Delivery unconfirmed · receiver verified');
+    view.unmount();
+    render(<App client={makeClient({ mode: 'live', messages: { alpha: message('alpha', ['node0', 'node4']) } })}/>);
+    expect(screen.getByRole('status', { name: 'Selected message' })).toHaveTextContent('In transit');
+  });
+
+  it('does not claim a failed transfer means the receiver never reconstructed content', () => {
+    render(<App client={makeClient({ mode: 'live', messages: { alpha: {
+      ...message('alpha', ['node0', 'node4']), status: 'failed', received: 2, integrity: 'verified',
+    } } })}/>);
+    const summary = screen.getByRole('status', { name: 'Selected message' });
+    expect(summary).toHaveTextContent('Failed');
+    expect(summary).not.toHaveTextContent(/shows nothing|never had the full message/i);
+  });
+
+  it('does not claim sender confirmation without a confirmed receipt', () => {
+    render(<App client={makeClient({ mode: 'live', messages: { alpha: {
+      ...message('alpha', ['node0', 'node4']), status: 'delivered', received: 2, integrity: 'verified', receiptConfirmed: false,
+    } } })}/>);
+    expect(screen.getByRole('status', { name: 'Selected message' })).toHaveTextContent('Receiver verified · awaiting receipt');
+  });
+
+  it('starts the newly chosen pair with correctly addressed drafts', () => {
+    render(<App client={makeClient({ mode: 'live' })}/>);
+    expect(screen.getByRole('combobox', { name: 'Left phone node' })).toHaveTextContent('Malcome');
+    expect(screen.getByRole('combobox', { name: 'Right phone node' })).toHaveTextContent('Basith');
+    fireEvent.click(screen.getByRole('combobox', { name: 'Right phone node' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Lucas (node2)' }));
+    expect(within(screen.getByTestId('phone-boss')).getByRole('textbox', { name: 'Message input' })).toHaveValue('Lucas, where are you on the playa?');
+    expect(within(screen.getByTestId('phone-employee')).getByRole('textbox', { name: 'Message input' })).toHaveValue('Malcome, I can hear you through the mesh!');
+  });
+
+  it('anchors the phone menu to its trigger and closes on Escape or an outside press', () => {
+    render(<App client={makeClient({ mode: 'live' })}/>);
+    const trigger = screen.getByRole('combobox', { name: 'Right phone node' });
+    fireEvent.click(trigger);
+    const menu = screen.getByRole('listbox', { name: 'Right phone node options' });
+    expect(menu.parentElement).toHaveClass('phone-node-picker');
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(within(menu).getByRole('option', { name: 'Malcome (node0)' })).toBeDisabled();
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    fireEvent.click(trigger);
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('reports route verification from proof data without inventing a Dijkstra check', () => {
+    render(<App client={makeClient({ mode: 'live', routing: { distanceAware: true, links: [] }, messages: { alpha: {
+      ...message('alpha', ['node0', 'node4']), routeProof: { metric: 'etx', chosen: ['node0', 'node4'],
+        chosenCost: 2, chosenDistance: 140, candidatesChecked: 1, verifiedBy: ['enumeration'], optimal: true, links: [], alternatives: [] },
+    } } })}/>);
+    expect(screen.getByLabelText('Route proof')).not.toHaveTextContent('Dijkstra');
+    expect(screen.getByLabelText('Route proof')).toHaveTextContent('enumeration');
+  });
+
   it('introduces the local playa conversation and named relays without workplace identities', () => {
     const client = makeClient();
     const nodes = client.getSnapshot().nodes;
     render(<App client={makeClient({ nodes: [...nodes, { id: 'node1', name: 'Bob', x: 60, y: 60, color: '#777', online: true }] })}/>);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Find your people. Across the playa.');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Message Your People At Burning Man Without Cell Service');
     const map = within(screen.getByRole('img', { name: 'Mesh network topology' }));
     for (const label of ['Malcome · Deep playa', 'Basith · Playa airport', 'Lucas · Relay', 'Shravanthi · Relay']) {
       expect(map.getByText(label, { selector: 'text' })).toBeInTheDocument();
@@ -64,7 +134,7 @@ describe('mesh console', () => {
     expect(within(phone).queryByText('Malcome → Basith')).not.toBeInTheDocument();
     const profile = screen.getByRole('group', { name: 'Malcome profile' });
     expect(profile).toHaveTextContent('Malcome');
-    expect(profile).toHaveTextContent('Deep playa · Mayan Warrior');
+    expect(profile).toHaveTextContent('Deep Playa · Mayan Warrior');
     expect(profile).toHaveTextContent('NODE0');
     expect(phone.contains(profile)).toBe(false);
     const receiver = screen.getByTestId('phone-employee');

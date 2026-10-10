@@ -47,6 +47,48 @@ class ReceiverStatus(Enum):
     verified = 'verified'
 
 
+class NodePosition(BaseModel):
+    x: confloat(ge=0.0, le=10000.0) = Field(
+        ..., description='Horizontal position in meters'
+    )
+    y: confloat(ge=0.0, le=10000.0) = Field(
+        ..., description='Vertical position in meters'
+    )
+
+
+class RoutingConfig(BaseModel):
+    distance_routing: bool
+
+
+class LinkMetric(BaseModel):
+    source: str
+    destination: str
+    distance: float
+    loss: float
+    etx: float
+
+
+class RouteAlternative(BaseModel):
+    path: list[str]
+    hops: int
+    cost: float
+    distance: float
+    extra_cost: float
+
+
+class RouteProof(BaseModel):
+    metric: str
+    chosen: list[str]
+    chosen_cost: float
+    chosen_distance: float
+    candidates_checked: int
+    verified_by: list[str]
+    dijkstra_cost: float | None = Field(...)
+    optimal: bool
+    links: list[LinkMetric]
+    alternatives: list[RouteAlternative]
+
+
 class SimulationConfig(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -74,6 +116,8 @@ class Simulation(BaseModel):
     model: str
     fec: bool
     link_retries: int | None = None
+    distance_routing: bool | None = None
+    link_metrics: list[LinkMetric] | None = None
 
 
 class MediaMetadata(BaseModel):
@@ -91,7 +135,11 @@ class MediaMetadata(BaseModel):
     target_bitrate_bps: int | None = None
     encoded_bitrate_bps: int | None = None
     codec: str | None = None
+    codec2_mode: int | None = None
+    sample_rate: int | None = None
+    sample_count: int | None = None
     mime: str | None = None
+    playback_mime: str | None = None
     media_type: str | None = None
     quality_label: str | None = None
     clip_policy: str | None = None
@@ -134,7 +182,7 @@ class Message(BaseModel):
     acked: int
     status: MessageStatus
     route: list[str]
-    eta: float
+    eta: float | None = Field(...)
     media_type: MediaType
     preview: str
     progress: float
@@ -160,6 +208,7 @@ class Message(BaseModel):
     route_history: list[list[str]] | None = None
     active_link: list[str] | None = None
     route_available: bool | None = None
+    route_proof: RouteProof | None = None
     receiver_verified_at: float | None = None
     content_url: str | None = None
     error: str | None = None

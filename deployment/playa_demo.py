@@ -4,10 +4,18 @@ def apply_recording_topology(backend):
         'node0': 'Malcome', 'node1': 'Shravanthi', 'node2': 'Lucas',
         'node3': 'Dave', 'node4': 'Basith', 'node5': 'Frank',
     }
-    # Preserve the team's distributed positions, range and routing algorithm.
+    positions = {
+        'node0': (0, 800), 'node2': (700, 200), 'node1': (1400, 650),
+        'node3': (2100, 100), 'node4': (2800, 700), 'node5': (1400, 0),
+    }
+    # A 2.8 km scene with cycles, using the engine's actual range-based graph.
+    # The source and destination require at least three intermediate relays.
     for node_id, name in names.items():
         backend.nodes[node_id].name = name
-    backend.configure(playback_speed=20)
+        backend.nodes[node_id].x, backend.nodes[node_id].y = positions[node_id]
+        backend.nodes[node_id].online = True
+    # Keep the service's TEAMWATER_PLAYBACK_SPEED setting (default 2x).
+    backend.configure(radio_range=1000)
     return backend
 
 from service import service

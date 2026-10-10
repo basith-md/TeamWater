@@ -4,10 +4,13 @@ Open http://localhost:5173 in Chrome. The console has one live simulator mode.
 
 Malcome is at Mayan Warrior in deep playa. Basith is at the playa airport.
 Lucas, Shravanthi, Dave, and Frank are other participants relaying messages.
-All six nodes are online. The starting shortest route is
-Malcome → Lucas → Basith; the simulator computes it from the team’s distributed
-node positions and 180 m radio range. Shravanthi, Dave, and Frank provide other
-connected routes. A relay does not need to appear on every selected route.
+All six nodes are online across a 2.8 km scene, with a configured 1,000 m radio
+range. The radio graph requires at least four hops between Malcome and Basith:
+Malcome → Lucas → Shravanthi → Dave → Basith is one shortest path, and Frank
+provides an alternate path between Lucas and Dave. The engine selects the actual
+route; the wrapper does not force a path. The live service varies eligible routes
+between messages. Distance-aware routing instead selects the minimum modeled
+expected-transmission cost and exposes its route comparison.
 
 ## Start
 
@@ -22,7 +25,8 @@ TEAMWATER_BACKEND_URL=http://127.0.0.1:8003 npm run dev --workspace @teamwater/c
 ```
 
 The recording wrapper only configures the team's mesh engine. It uses 20% packet
-loss, 1,070 bps, per-hop retries, and 20× simulation playback. This is a network
+loss, 1,070 bps, per-hop retries, and the service's default 2× simulation playback.
+Set `TEAMWATER_PLAYBACK_SPEED` before startup to choose another speed. This is a network
 simulation running through the backend, not physical offline radio transport.
 Packet trace replay slows down observed events for presentation; delay metrics
 come from backend simulation time.
@@ -36,6 +40,12 @@ come from backend simulation time.
 5. Show bandwidth, delay, range, packet loss, and the packet ledger.
 6. For voice, record up to five seconds, preview, send, and play the verified
    audio on the receiving phone. Chrome microphone permission is required.
+
+Voice uses Codec2 at 1,200 bps on the simulated radio. The backend decodes the
+verified receiver bytes into mono 8 kHz WAV for browser playback. Uploaded audio
+is limited to the first five seconds. Runtime dependencies include FFmpeg,
+`pycodec2`, NumPy, and the native Codec2 shared library (`brew install codec2` on
+this Mac). The downloaded WAV is larger than the compressed radio payload.
 
 Restart only the port 8003 process and reload the console for a clean take.
 The backend's general `/simulation/reset` restores its default topology, so it

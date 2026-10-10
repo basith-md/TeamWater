@@ -39,7 +39,7 @@ from media import (
     MAX_UPLOAD,
 )
 
-from shared.python.models import SimulationConfig
+from shared.python.models import SimulationConfig, RoutingConfig, NodePosition
 
 app = FastAPI(title="CHRP Mesh Service")
 backend = MeshBackend(playback_speed=float(os.environ.get("TEAMWATER_PLAYBACK_SPEED", "2")), diverse_routes=True)
@@ -197,6 +197,26 @@ async def configure_simulation(config: SimulationConfig):
     return backend.get_state()["simulation"]
 
 
+@app.post("/simulation/routing")
+async def configure_routing(config: RoutingConfig):
+    if any(not task.done() for task in backend._tasks.values()):
+        raise HTTPException(409, "Wait for active transfers to finish before changing routing")
+    backend.configure(distance_routing=config.distance_routing)
+    return backend.get_state()["simulation"]
+
+
+@app.post("/simulation/nodes/{node_id}/position")
+async def move_node(node_id: str, position: NodePosition):
+    if node_id not in backend.nodes:
+        raise HTTPException(404, "Unknown node")
+    if not (0 <= position.x <= 10000 and 0 <= position.y <= 10000):
+        raise HTTPException(422, "Position outside the map")
+    if any(not task.done() for task in backend._tasks.values()):
+        raise HTTPException(409, "Wait for active transfers to finish before moving nodes")
+    backend.move_node(node_id, position.x, position.y)
+    return backend.get_state()["simulation"]
+
+
 @app.post("/simulation/reset")
 async def reset_simulation():
     global backend
@@ -207,6 +227,9 @@ async def reset_simulation():
         playback_speed=backend.playback_speed,
         radio_range=backend.radio_range,
         use_fec=backend.use_fec,
+        link_retries=backend.link_retries,
+        diverse_routes=backend.diverse_routes,
+        distance_routing=backend.distance_routing,
     )
     await backend.close()
     backend = MeshBackend(**config)
