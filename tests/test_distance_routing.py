@@ -28,6 +28,15 @@ class DistanceRoutingTests(unittest.TestCase):
         self.assertLess(near, far)
         self.assertEqual(MeshBackend(loss_rate=0.2)._link_loss("node3", "node4"), 0.2)
 
+    def test_moving_a_node_changes_the_best_route(self):
+        b = self.backend()
+        before, _ = b._optimal_route("node1", "node4")
+        relay = before[1]
+        b.move_node(relay, 600, 0)
+        after, proof = b._optimal_route("node1", "node4")
+        self.assertNotIn(relay, after)
+        self.assertTrue(proof["optimal"])
+
     def test_distance_can_beat_fewer_hops(self):
         b = self.backend(radio_range=300)
         b.nodes["node0"].x, b.nodes["node0"].y = 0, 0
