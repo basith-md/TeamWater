@@ -49,7 +49,7 @@ describe('mesh console', () => {
     const client = makeClient();
     const nodes = client.getSnapshot().nodes;
     render(<App client={makeClient({ nodes: [...nodes, { id: 'node1', name: 'Bob', x: 60, y: 60, color: '#777', online: true }] })}/>);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Playa mesh messenger');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Water Connect');
     const map = within(screen.getByRole('img', { name: 'Mesh network topology' }));
     for (const label of ['Malcome · Deep playa', 'Basith · Playa airport', 'Lucas · Relay', 'Shravanthi · Relay']) {
       expect(map.getByText(label, { selector: 'text' })).toBeInTheDocument();
@@ -75,8 +75,9 @@ describe('mesh console', () => {
     expect(receiverProfile).toHaveTextContent('Playa airport');
     expect(receiverProfile).toHaveTextContent('NODE4');
     expect(receiver.contains(receiverProfile)).toBe(false);
-    const network = screen.getByRole('region', { name: 'Network console' });
-    expect(within(network).getByRole('heading', { name: 'Malcome → Basith' })).toBeInTheDocument();
+    const pair = screen.getByRole('group', { name: 'Choose phones' });
+    expect(within(pair).getByLabelText('Left phone node')).toHaveValue('node0');
+    expect(within(pair).getByLabelText('Right phone node')).toHaveValue('node4');
     expect(within(phone).getByRole('textbox', { name: 'Message input' })).toHaveValue('Basith, come meet me at the Mayan Warrior set in deep playa!');
   });
 
