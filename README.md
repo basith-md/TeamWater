@@ -1,5 +1,8 @@
 # CHRP Mesh — Backend + Service
 
+**Live Demo:** [https://zippy-ivory-8b5yt2y.vercel.app/](https://zippy-ivory-8b5yt2y.vercel.app/)  
+(Static frontend of the iPhone-style mesh UI. The full FastAPI + WebSocket backend runs separately.)
+
 The backend is in its own directory so other services can use it independently.
 
 ## Shared Types (OpenAPI)
