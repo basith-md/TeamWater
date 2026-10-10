@@ -1,18 +1,20 @@
 openapi: 3.0.3
 info:
   title: CHRP Mesh Service
-  description: |
-    API for the CHRP off-grid mesh simulator.
-    
+  description: 'API for the CHRP off-grid mesh simulator.
+
+
     **IMPORTANT**: This is the single source of truth for shared types.
+
     Do NOT edit the generated Python or TypeScript files.
+
     Modify only this OpenAPI spec, then regenerate.
-  version: 1.0.0
 
+    '
+  version: 1.1.0
 servers:
-  - url: http://localhost:8000
-    description: Local development
-
+- url: http://localhost:8000
+  description: Local development
 paths:
   /send/text:
     post:
@@ -24,7 +26,10 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [src, dst, text]
+              required:
+              - src
+              - dst
+              - text
               properties:
                 src:
                   type: string
@@ -36,13 +41,16 @@ paths:
                   type: string
                   description: Message text
       responses:
-        "200":
+        '200':
           description: Message accepted
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SendTextResponse"
-
+                $ref: '#/components/schemas/SendTextResponse'
+        '400':
+          description: Invalid media or nodes
+        '413':
+          description: Upload exceeds 10 MiB
   /send/image:
     post:
       operationId: sendImage
@@ -53,7 +61,10 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [src, dst, file]
+              required:
+              - src
+              - dst
+              - file
               properties:
                 src:
                   type: string
@@ -63,13 +74,16 @@ paths:
                   type: string
                   format: binary
       responses:
-        "200":
+        '200':
           description: Image accepted
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SendImageResponse"
-
+                $ref: '#/components/schemas/SendImageResponse'
+        '400':
+          description: Invalid media or nodes
+        '413':
+          description: Upload exceeds 10 MiB
   /send/voice:
     post:
       operationId: sendVoice
@@ -80,7 +94,10 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [src, dst, file]
+              required:
+              - src
+              - dst
+              - file
               properties:
                 src:
                   type: string
@@ -90,53 +107,222 @@ paths:
                   type: string
                   format: binary
       responses:
-        "200":
+        '200':
           description: Voice note accepted
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SendVoiceResponse"
-
+                $ref: '#/components/schemas/SendVoiceResponse'
+        '400':
+          description: Invalid media or nodes
+        '413':
+          description: Upload exceeds 10 MiB
   /nodes:
     get:
       operationId: getNodes
       summary: List all nodes
       responses:
-        "200":
+        '200':
           description: Node list
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/NodeSummary"
-
+                  $ref: '#/components/schemas/NodeSummary'
   /state:
     get:
       operationId: getState
       summary: Get full mesh state (polling alternative to WebSocket)
       responses:
-        "200":
+        '200':
           description: Current mesh state
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MeshState"
-
+                $ref: '#/components/schemas/MeshState'
+  /send/video:
+    post:
+      operationId: sendVideo
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                dst:
+                  type: string
+                file:
+                  format: binary
+                  type: string
+                src:
+                  type: string
+              required:
+              - src
+              - dst
+              - file
+              type: object
+        required: true
+      responses:
+        '200':
+          description: Video summary accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendVideoResponse'
+        '400':
+          description: Invalid media or nodes
+        '413':
+          description: Upload exceeds 10 MiB
+      summary: Send a silent 1 fps video summary (first 5 seconds; <=12 KiB)
+  /simulation/config:
+    post:
+      operationId: configureSimulation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulationConfig'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Simulation'
+        '409':
+          description: A transfer is active
+        '422':
+          description: Invalid configuration
+  /simulation/reset:
+    post:
+      operationId: resetSimulation
+      summary: Cancel transfers and reset nodes/messages while preserving radio settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeshState'
+  /nodes/{node_id}/status:
+    post:
+      operationId: setNodeStatus
+      parameters:
+      - name: node_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - online
+              properties:
+                online:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  node_id:
+                    type: string
+                  online:
+                    type: boolean
+        '404':
+          description: Unknown node
+  /messages/{msg_id}/content:
+    get:
+      operationId: getReceivedContent
+      parameters:
+      - name: msg_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Verified receiver bytes only; text is decompressed
+          content:
+            text/plain:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            audio/ogg:
+              schema:
+                type: string
+                format: binary
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '409':
+          description: Receiver is incomplete
+        '404':
+          description: Unknown message
+  /demo/{media_type}:
+    post:
+      operationId: sendDemo
+      summary: Send a bundled asset from Alice to Frank
+      parameters:
+      - name: media_type
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - voice
+          - image
+          - video
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendVideoResponse'
+        '404':
+          description: Unknown asset
 components:
   schemas:
     NodeSummary:
       type: object
-      required: [id, name]
+      required:
+      - id
+      - name
       properties:
         id:
           type: string
         name:
           type: string
-
     Node:
       type: object
-      required: [id, name, x, y, color]
+      required:
+      - id
+      - name
+      - x
+      - y
+      - color
       properties:
         id:
           type: string
@@ -150,14 +336,33 @@ components:
           format: float
         color:
           type: string
-
+        online:
+          type: boolean
     MessageStatus:
       type: string
-      enum: [sending, in_transit, reassembled, delivered, failed]
-
+      enum:
+      - sending
+      - in_transit
+      - awaiting_receipt
+      - delivered
+      - failed
+      - receipt_unconfirmed
+      - cancelled
     Message:
       type: object
-      required: [msg_id, src, dst, total_chunks, received, acked, status, route, eta, media_type, preview, progress]
+      required:
+      - msg_id
+      - src
+      - dst
+      - total_chunks
+      - received
+      - acked
+      - status
+      - route
+      - eta
+      - media_type
+      - preview
+      - progress
       properties:
         msg_id:
           type: string
@@ -172,7 +377,7 @@ components:
         acked:
           type: integer
         status:
-          $ref: "#/components/schemas/MessageStatus"
+          $ref: '#/components/schemas/MessageStatus'
         route:
           type: array
           items:
@@ -180,9 +385,16 @@ components:
         eta:
           type: number
           format: float
+          nullable: true
         media_type:
           type: string
-          enum: [text, image, voice]
+          enum:
+          - text
+          - image
+          - voice
+          - video
+          - ai_request
+          - ai_response
         preview:
           type: string
         progress:
@@ -191,15 +403,79 @@ components:
         created_at:
           type: number
           format: float
-
+        radio_bytes:
+          type: integer
+        retries:
+          type: integer
+        lost_packets:
+          type: integer
+        fec_recovered:
+          type: integer
+        data_retries:
+          type: integer
+        control_retries:
+          type: integer
+        frames_sent:
+          type: integer
+        airtime_seconds:
+          type: number
+        elapsed_seconds:
+          type: number
+        efficiency:
+          type: number
+        received_ids:
+          type: array
+          items:
+            type: integer
+        acked_ids:
+          type: array
+          items:
+            type: integer
+        missing_ids:
+          type: array
+          items:
+            type: integer
+        receiver_status:
+          type: string
+          enum:
+          - waiting
+          - partial
+          - verified
+        metadata:
+          $ref: '#/components/schemas/MediaMetadata'
+        route_history:
+          type: array
+          items:
+            type: array
+            items:
+              type: string
+        active_link:
+          type: array
+          items:
+            type: string
+        route_available:
+          type: boolean
+        receiver_verified_at:
+          type: number
+          nullable: true
+        content_url:
+          type: string
+          nullable: true
+        error:
+          type: string
+        eta_basis:
+          type: string
     MeshState:
       type: object
-      required: [nodes, connections, messages]
+      required:
+      - nodes
+      - connections
+      - messages
       properties:
         nodes:
           type: array
           items:
-            $ref: "#/components/schemas/Node"
+            $ref: '#/components/schemas/Node'
         connections:
           type: object
           additionalProperties:
@@ -209,20 +485,21 @@ components:
         messages:
           type: object
           additionalProperties:
-            $ref: "#/components/schemas/Message"
-
+            $ref: '#/components/schemas/Message'
+        simulation:
+          $ref: '#/components/schemas/Simulation'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/PacketEvent'
     SendTextResponse:
       type: object
-      required: [msg_id, chunks]
-      properties:
-        msg_id:
-          type: string
-        chunks:
-          type: integer
-
-    SendImageResponse:
-      type: object
-      required: [msg_id, original, compressed, chunks]
+      required:
+      - msg_id
+      - original
+      - compressed
+      - chunks
+      - metadata
       properties:
         msg_id:
           type: string
@@ -232,12 +509,195 @@ components:
           type: integer
         chunks:
           type: integer
-
-    SendVoiceResponse:
+        metadata:
+          $ref: '#/components/schemas/MediaMetadata'
+    SendImageResponse:
       type: object
-      required: [msg_id, chunks]
+      required:
+      - msg_id
+      - original
+      - compressed
+      - chunks
+      - metadata
       properties:
         msg_id:
           type: string
+        original:
+          type: integer
+        compressed:
+          type: integer
         chunks:
           type: integer
+        metadata:
+          $ref: '#/components/schemas/MediaMetadata'
+    SendVoiceResponse:
+      type: object
+      required:
+      - msg_id
+      - original
+      - compressed
+      - chunks
+      - metadata
+      properties:
+        msg_id:
+          type: string
+        original:
+          type: integer
+        compressed:
+          type: integer
+        chunks:
+          type: integer
+        metadata:
+          $ref: '#/components/schemas/MediaMetadata'
+    SimulationConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        loss_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+        bit_rate:
+          type: number
+          minimum: 100
+          maximum: 21880
+        seed:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
+        playback_speed:
+          type: number
+          minimum: 1
+          maximum: 1000
+        radio_range:
+          type: number
+          minimum: 50
+          maximum: 500
+        use_fec:
+          type: boolean
+    Simulation:
+      type: object
+      required:
+      - loss_rate
+      - bit_rate
+      - seed
+      - playback_speed
+      - simulation_time
+      - model
+      - fec
+      - window_size
+      - range_meters
+      - queue_depth
+      properties:
+        loss_rate:
+          type: number
+        bit_rate:
+          type: number
+        playback_speed:
+          type: number
+        simulation_time:
+          type: number
+        range_meters:
+          type: number
+        seed:
+          type: integer
+        window_size:
+          type: integer
+        queue_depth:
+          type: integer
+        model:
+          type: string
+        fec:
+          type: boolean
+    MediaMetadata:
+      type: object
+      additionalProperties: true
+      properties:
+        original_bytes:
+          type: integer
+        encoded_bytes:
+          type: integer
+        transfer_bytes:
+          type: integer
+        width:
+          type: integer
+        height:
+          type: integer
+        byte_budget:
+          type: integer
+        frame_count:
+          type: integer
+        clip_limit_seconds:
+          type: integer
+        target_bitrate_bps:
+          type: integer
+        encoded_bitrate_bps:
+          type: integer
+        codec:
+          type: string
+        mime:
+          type: string
+        media_type:
+          type: string
+        quality_label:
+          type: string
+        clip_policy:
+          type: string
+        duration_seconds:
+          type: number
+        source_duration_seconds:
+          type: number
+        frames_per_second:
+          type: number
+        audio_included:
+          type: boolean
+    PacketEvent:
+      type: object
+      required:
+      - sequence
+      - type
+      - msg_id
+      - simulation_time
+      additionalProperties: true
+      properties:
+        sequence:
+          type: integer
+        type:
+          type: string
+        msg_id:
+          type: string
+        simulation_time:
+          type: number
+        source:
+          type: string
+        destination:
+          type: string
+        kind:
+          type: integer
+        chunk:
+          type: integer
+        frame_bytes:
+          type: integer
+        chunk_ids:
+          type: array
+          items:
+            type: integer
+    SendVideoResponse:
+      type: object
+      required:
+      - msg_id
+      - original
+      - compressed
+      - chunks
+      - metadata
+      properties:
+        msg_id:
+          type: string
+        original:
+          type: integer
+        compressed:
+          type: integer
+        chunks:
+          type: integer
+        metadata:
+          $ref: '#/components/schemas/MediaMetadata'

@@ -5,26 +5,43 @@ Other services can also import MeshBackend directly and skip this layer.
 """
 
 import asyncio
-import io
 from typing import Set
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
+from fastapi import (
+    FastAPI,
+    WebSocket,
+    WebSocketDisconnect,
+    UploadFile,
+    File,
+    Form,
+    HTTPException,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, Response
-from PIL import Image
 
 import sys
 from pathlib import Path
 
+# Allow imports both from repo root and direct service.py execution
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # Allow importing the backend from the sibling directory
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
 from mesh_backend import MeshBackend
-from media import encode_text, encode_image, encode_voice, render_media, MAX_UPLOAD
+from media import (
+    encode_text,
+    encode_image,
+    encode_voice,
+    encode_video,
+    render_media,
+    MAX_UPLOAD,
+)
+
+from shared.python.models import SimulationConfig
 
 app = FastAPI(title="CHRP Mesh Service")
-backend = MeshBackend()
+backend = MeshBackend(playback_speed=100)
 
 # Track connected WebSocket clients
 connected_clients: Set[WebSocket] = set()
@@ -44,9 +61,19 @@ async def broadcast_state():
     connected_clients.difference_update(dead)
 
 
+_broadcast_task = None
+
+
+async def delayed_broadcast():
+    await asyncio.sleep(0.04)
+    await broadcast_state()
+
+
 def on_backend_change():
-    """Callback registered with the backend so we push updates immediately."""
-    asyncio.create_task(broadcast_state())
+    """Coalesce per-hop events instead of starting overlapping WebSocket writes."""
+    global _broadcast_task
+    if _broadcast_task is None or _broadcast_task.done():
+        _broadcast_task = asyncio.create_task(delayed_broadcast())
 
 
 # Register the callback so the backend notifies us of changes
@@ -74,13 +101,23 @@ async def websocket_endpoint(websocket: WebSocket):
 
 async def submit_media(src, dst, media, preview):
     try:
-        msg_id = await backend.send_message(src, dst, media.data,
-            media.metadata["media_type"], preview, metadata=media.metadata)
+        msg_id = await backend.send_message(
+            src,
+            dst,
+            media.data,
+            media.metadata["media_type"],
+            preview,
+            metadata=media.metadata,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"msg_id": msg_id, "original": media.metadata["original_bytes"],
-            "compressed": len(media.data), "chunks": backend.messages[msg_id].total_chunks,
-            "metadata": media.metadata}
+    return {
+        "msg_id": msg_id,
+        "original": media.metadata["original_bytes"],
+        "compressed": len(media.data),
+        "chunks": backend.messages[msg_id].total_chunks,
+        "metadata": media.metadata,
+    }
 
 
 @app.post("/send/text")
@@ -103,15 +140,72 @@ async def read_and_encode(file, encoder):
 
 
 @app.post("/send/image")
-async def send_image(src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)):
+async def send_image(
+    src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)
+):
     media = await read_and_encode(file, encode_image)
-    return await submit_media(src, dst, media, f"Image {media.metadata['width']}x{media.metadata['height']}")
+    return await submit_media(
+        src, dst, media, f"Image {media.metadata['width']}x{media.metadata['height']}"
+    )
 
 
 @app.post("/send/voice")
-async def send_voice(src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)):
+async def send_voice(
+    src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)
+):
     media = await read_and_encode(file, encode_voice)
     return await submit_media(src, dst, media, "Opus voice (first 5 seconds maximum)")
+
+
+@app.post("/send/video")
+async def send_video(
+    src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)
+):
+    media = await read_and_encode(file, encode_video)
+    return await submit_media(src, dst, media, media.metadata["quality_label"])
+
+
+@app.post("/simulation/config")
+async def configure_simulation(config: SimulationConfig):
+    if any(not task.done() for task in backend._tasks.values()):
+        raise HTTPException(
+            409, "Wait for active transfers to finish before changing radio settings"
+        )
+    backend.configure(**config.model_dump(exclude_none=True))
+    return backend.get_state()["simulation"]
+
+
+@app.post("/simulation/reset")
+async def reset_simulation():
+    global backend
+    config = dict(
+        loss_rate=backend.loss_rate,
+        bit_rate=backend.bit_rate,
+        seed=backend.seed,
+        playback_speed=backend.playback_speed,
+        radio_range=backend.radio_range,
+        use_fec=backend.use_fec,
+    )
+    await backend.close()
+    backend = MeshBackend(**config)
+    backend.on_state_change = on_backend_change
+    on_backend_change()
+    return backend.get_state()
+
+
+@app.post("/demo/{media_type}")
+async def send_demo(media_type: str):
+    assets = Path(__file__).resolve().parent.parent / "demo_assets"
+    choices = {
+        "voice": ("voice.wav", encode_voice),
+        "image": ("camp.png", encode_image),
+        "video": ("camp.mp4", encode_video),
+    }
+    if media_type not in choices:
+        raise HTTPException(404, "Unknown demo media")
+    name, encoder = choices[media_type]
+    media = await asyncio.to_thread(encoder, (assets / name).read_bytes())
+    return await submit_media("node0", "node5", media, f"Demo {media_type}")
 
 
 @app.get("/messages/{msg_id}/content")
@@ -121,8 +215,11 @@ async def received_content(msg_id: str):
     media = backend.received_media.get(msg_id)
     if media is None:
         raise HTTPException(409, "Receiver has not verified complete content")
-    return Response(render_media(media), media_type=media.metadata["mime"],
-                    headers={"X-Content-Type-Options": "nosniff"})
+    return Response(
+        render_media(media),
+        media_type=media.metadata["mime"],
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
 
 
 @app.post("/nodes/{node_id}/status")
@@ -145,7 +242,11 @@ async def get_state():
 
 
 # Serve static files (the demo UI)
-app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+    name="static",
+)
 
 
 if __name__ == "__main__":
