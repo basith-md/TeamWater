@@ -108,6 +108,7 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
     emit({ nodes: snapshot.nodes, links: snapshot.links, messages, events: merged.slice(-2000), eventHistoryComplete: complete,
       config: { ...state.config, bitRate: snapshot.bitRate, lossRate: snapshot.lossRate, rangeMeters: snapshot.rangeMeters },
       capabilities: { packetEvents: snapshot.packetEvents, controls: false, verifiedContent: snapshot.packetEvents || Object.values(messages).some(m => m.receiverStatus !== undefined) },
+      routing: { distanceAware: snapshot.distanceRouting, links: snapshot.linkMetrics },
       connection: 'connected', error: contentError(messages) });
     for (const [id, path] of Object.entries(snapshot.contentPaths)) if (messages[id].kind === 'text' && messages[id].text === undefined) void loadText(id, path);
   }
@@ -183,6 +184,11 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
     setMode: (mode, endpoint = state.endpoint) => { cancel(); disposed = false; emit(initialState(mode, endpoint, state.scenario, state.config.playbackSpeed)); if (started && mode === 'live') connect(); },
     setScenario: (scenario: Scenario) => { if (state.mode !== 'replay') return; cancel(); emit(initialState('replay', state.endpoint, scenario, state.config.playbackSpeed)); },
     setPlaybackSpeed: speed => { if (state.mode === 'replay' && Number.isFinite(speed) && speed > 0) emit({ config: { ...state.config, playbackSpeed: Math.max(0.25, Math.min(4, speed)) } }); },
+    setDistanceRouting: async on => {
+      if (state.mode !== 'live') return;
+      const response = await fetch(`${urls(state.endpoint).http}/simulation/routing`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ distance_routing: on }) });
+      if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(typeof body?.detail === 'string' ? body.detail : 'Could not change routing.'); }
+    },
     reset: () => { cancel(); emit(initialState(state.mode, state.endpoint, state.scenario, state.config.playbackSpeed)); if (started && state.mode === 'live') connect(); },
     sendText: async (src, dst, text) => {
       ensureActive(); if (!text.trim()) throw new Error('Enter a message.');

@@ -9,6 +9,7 @@ import os
 from typing import Set
 
 import uvicorn
+from pydantic import BaseModel
 from fastapi import (
     FastAPI,
     WebSocket,
@@ -197,6 +198,18 @@ async def configure_simulation(config: SimulationConfig):
     return backend.get_state()["simulation"]
 
 
+class RoutingConfig(BaseModel):
+    distance_routing: bool
+
+
+@app.post("/simulation/routing")
+async def configure_routing(config: RoutingConfig):
+    if any(not task.done() for task in backend._tasks.values()):
+        raise HTTPException(409, "Wait for active transfers to finish before changing routing")
+    backend.configure(distance_routing=config.distance_routing)
+    return backend.get_state()["simulation"]
+
+
 @app.post("/simulation/reset")
 async def reset_simulation():
     global backend
@@ -207,6 +220,9 @@ async def reset_simulation():
         playback_speed=backend.playback_speed,
         radio_range=backend.radio_range,
         use_fec=backend.use_fec,
+        link_retries=backend.link_retries,
+        diverse_routes=backend.diverse_routes,
+        distance_routing=backend.distance_routing,
     )
     await backend.close()
     backend = MeshBackend(**config)

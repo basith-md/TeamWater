@@ -73,8 +73,9 @@ export function Topology({ state, message, events }: { state: MeshState; message
       {state.links.map(link => {
         const a = positions.get(link.from), b = positions.get(link.to);
         if (!a || !b) return null;
+        const metric = state.routing?.distanceAware ? state.routing.links.find(l => (l.from === link.from && l.to === link.to) || (l.from === link.to && l.to === link.from)) : undefined;
         const active = route.some((id, index) => index < route.length - 1 && ((id === link.from && route[index + 1] === link.to) || (id === link.to && route[index + 1] === link.from)));
-        return <line key={`${link.from}-${link.to}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={active ? 'map-link active' : 'map-link'} />;
+        return <g key={`${link.from}-${link.to}`}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={active ? 'map-link active' : 'map-link'} />{metric && <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 4} className={active ? 'link-label active' : 'link-label'} textAnchor="middle">{Math.round(metric.distance)} m</text>}</g>;
       })}
       {state.nodes.map(node => {
         const point = positions.get(node.id)!;
@@ -110,6 +111,24 @@ function narrate(message: MeshMessage | undefined, events: MeshEvent[]): { title
   return { title: 'In transit', body: `Sending ${message.totalChunks} chunks over ${route} at about 1 kbps. ${message.received}/${message.totalChunks} have reached the receiver so far. Each hop waits for an acknowledgment and resends lost packets; the far phone stays blank until all chunks are in and verified.${loss}` };
 }
 
+function RouteProofPanel({ message, distanceAware }: { message?: MeshMessage; distanceAware: boolean }) {
+  if (!distanceAware) return null;
+  const proof = message?.routeProof;
+  if (!proof) return <div className="route-proof"><span className="small-label">WHY THIS ROUTE</span><p>Send a message to see which path the mesh picked and the proof that it was the cheapest.</p></div>;
+  const name = (id: string) => (playaNodeLabels[id] ?? id).split(' · ')[0];
+  const chain = (path: string[]) => path.map(name).join(' → ');
+  return <div className="route-proof" aria-label="Route proof">
+    <span className="small-label">WHY THIS ROUTE</span>
+    <strong>{chain(proof.chosen)} · cost {proof.chosenCost.toFixed(2)} · {Math.round(proof.chosenDistance)} m</strong>
+    <p>Cost is expected transmissions: each hop is sent 1 / (1 − loss)² times on average (frame and ACK must both arrive), and loss rises with distance. {proof.optimal ? `Checked all ${proof.candidatesChecked} loop-free paths and confirmed with Dijkstra: none is cheaper.` : 'Could not confirm this path is the cheapest.'}</p>
+    <table aria-label="Route comparison"><thead><tr><th>Path</th><th>Hops</th><th>Distance</th><th>Cost</th></tr></thead><tbody>
+      <tr className="chosen"><td>{chain(proof.chosen)} ✓</td><td>{proof.chosen.length - 1}</td><td>{Math.round(proof.chosenDistance)} m</td><td>{proof.chosenCost.toFixed(2)}</td></tr>
+      {proof.alternatives.map(alt => <tr key={alt.path.join('>')}><td>{chain(alt.path)}</td><td>{alt.hops}</td><td>{Math.round(alt.distance)} m</td><td>{alt.cost.toFixed(2)} <small>(+{alt.extraCost.toFixed(2)})</small></td></tr>)}
+    </tbody></table>
+    <details><summary>Per-hop numbers</summary><ul>{proof.links.map(l => <li key={`${l.from}-${l.to}`}>{name(l.from)} → {name(l.to)}: {Math.round(l.distance)} m, {Math.round(l.loss * 100)}% loss, cost {l.etx.toFixed(2)}</li>)}</ul></details>
+  </div>;
+}
+
 function Narrator({ message, events }: { message: MeshMessage | undefined; events: MeshEvent[] }) {
   const note = narrate(message, events);
   return <div className="narrator" role="status" aria-label="What is happening"><span className="small-label">WHAT&apos;S HAPPENING</span><strong>{note.title}</strong><p>{note.body}</p></div>;
@@ -117,6 +136,12 @@ function Narrator({ message, events }: { message: MeshMessage | undefined; event
 
 export function App({ client }: { client: MeshClient }) {
   const state = useMesh(client);
+  const [routingError, setRoutingError] = useState<string | null>(null);
+  const distanceAware = !!state.routing?.distanceAware;
+  async function toggleDistance() {
+    setRoutingError(null);
+    try { await client.setDistanceRouting?.(!distanceAware); } catch (failure) { setRoutingError(failure instanceof Error ? failure.message : 'Could not change routing.'); }
+  }
   const [leftId, setLeftId] = useState('node0');
   const [rightId, setRightId] = useState('node4');
   const left = { src: leftId, dst: rightId, self: camper(leftId), contact: camper(rightId) };
@@ -171,10 +196,12 @@ export function App({ client }: { client: MeshClient }) {
           <div className="network-conversation"><div className="network-conversation-title"><h2>{camper(leftId)} → {camper(rightId)}</h2><span className="network-mesh-badge"><i/>MESH</span></div><p>{isDefaultPair ? 'Playa airport' : (playaNodeLabels[rightId] ?? rightId).split(' · ')[1] ?? rightId}</p><div className="network-conversation-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div></div>
           <div className="mode-note"><CircleHelp size={12}/>Off-grid phones in a local mesh simulation · running simulator required.</div>
 
-          <section className="topology-panel"><div className="panel-heading"><div><span className="eyebrow">THE NETWORK</span><h2>Every hop counts.</h2></div><span className="nodes-status"><i/>{state.nodes.filter(node => node.online).length} / {state.nodes.length} nodes online</span></div>
+          <section className="topology-panel"><div className="panel-heading"><div><span className="eyebrow">THE NETWORK</span><h2>Every hop counts.</h2></div><button className={`distance-toggle ${distanceAware ? 'on' : ''}`} role="switch" aria-checked={distanceAware} aria-label="Distance-aware routing" onClick={toggleDistance}><i/>Distances &amp; best route</button><span className="nodes-status"><i/>{state.nodes.filter(node => node.online).length} / {state.nodes.length} nodes online</span></div>
             <Narrator message={selected} events={events}/>
+            {routingError && <div className="error-banner" role="alert">{routingError}</div>}
             <Topology state={state} message={selected} events={events}/>
             <div className="route-detail"><div><span className="small-label">SELECTED ROUTE</span><div className="route-path" aria-label="Selected route">{selected ? (selected.route.length ? selected.route.join(' → ') : 'Route unavailable') : 'Send a message to trace its route'}</div></div><div className={`route-status ${verified ? 'verified' : ''}`}>{verified ? <ShieldCheck size={15}/> : <Activity size={15}/>}<span>{selected ? deliveryLabel(selected) : 'Ready when you are'}</span></div></div>
+          <RouteProofPanel message={selected} distanceAware={distanceAware}/>
           </section>
           <div className="metrics-row"><Metric name="Bandwidth" value={telemetry.bitRate === null ? null : telemetry.bitRate / 1000} unit="kbps" note={replay ? 'Sample radio configuration' : 'Configured radio bit rate'} icon={<Signal size={13}/>}/><Metric name="Delay" value={telemetry.latencyMs === null ? null : telemetry.latencyMs / 1000} unit="s" note={telemetry.latencyMs === null ? 'Receiver verification timing not reported' : replay ? 'Sample message elapsed time' : 'Time to receiver verification'} icon={<Activity size={13}/>}/><Metric name="Range" value={telemetry.rangeMeters} unit="m" note={telemetry.rangeMeters === null ? 'Radio range is not reported' : replay ? 'Sample radio range' : 'Configured radio range'} icon={<Radio size={13}/>}/><Metric name="Packet loss" value={telemetry.observedLossRate === null ? null : telemetry.observedLossRate * 100} unit="%" note="Observed transmitted frames" icon={<ArrowDownLeft size={13}/>}/></div>
           <section className="ledger-panel" id="packet-ledger" data-testid="packet-log"><div className="ledger-heading"><div><span className="eyebrow">FOLLOW THE SIGNAL</span><h2>Packet ledger<span className="count-badge">{events.length}</span></h2></div><span className="ledger-state"><i/>{replay ? 'REPLAY TRACE' : 'LIVE EVENTS'}</span></div>
