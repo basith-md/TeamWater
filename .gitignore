@@ -11,3 +11,5 @@ playwright-report/
 __pycache__/
 .venv/
 .DS_Store
+.cloudflare/
+.dev.vars*

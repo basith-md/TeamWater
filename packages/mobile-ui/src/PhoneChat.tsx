@@ -13,6 +13,8 @@ export interface PhoneChatProps {
   initialDraft?: string;
   embedded?: boolean;
   compact?: boolean;
+  showIdentity?: boolean;
+  showConversationHeader?: boolean;
   onComposerFocusChange?: (focused: boolean) => void;
   pickMedia?: (kind: 'image' | 'voice') => Promise<MediaAsset | null>;
   renderAudio?: (uri: string) => React.ReactNode;
@@ -29,7 +31,17 @@ const identities = {
   },
 };
 
-export function PhoneChat({ client, role, conversation = 'work', initialDraft = '', embedded = false, compact = false, onComposerFocusChange, pickMedia, renderAudio, renderVoiceRecorder }: PhoneChatProps) {
+export function PhoneIdentity({ role, conversation = 'work' }: Pick<PhoneChatProps, 'role' | 'conversation'>) {
+  const identity = identities[conversation][role];
+  const { src } = roleNodes(role);
+  return <View style={styles.identity}>
+      <View style={styles.avatar}><Text style={styles.avatarText}>{identity.initial}</Text></View>
+      <View style={styles.identityCopy}><Text style={styles.person}>{identity.name}<Text style={styles.role}> / {identity.title}</Text></Text><Text style={styles.location}>{identity.location}</Text></View>
+      <Text style={styles.node}>{src.toUpperCase()}</Text>
+    </View>;
+}
+
+export function PhoneChat({ client, role, conversation = 'work', initialDraft = '', embedded = false, compact = false, showIdentity = true, showConversationHeader = true, onComposerFocusChange, pickMedia, renderAudio, renderVoiceRecorder }: PhoneChatProps) {
   const { fontScale } = useWindowDimensions();
   const inputScale = Number.isFinite(fontScale) && fontScale > 1 ? fontScale : 1;
   const state = useSyncExternalStore(client.subscribe.bind(client), client.getSnapshot.bind(client), client.getSnapshot.bind(client));
@@ -93,13 +105,9 @@ export function PhoneChat({ client, role, conversation = 'work', initialDraft = 
   }
 
   return <View style={[styles.phone, embedded && styles.embedded]}>
-    {!compact && <View style={styles.identity}>
-      <View style={styles.avatar}><Text style={styles.avatarText}>{identity.initial}</Text></View>
-      <View style={styles.identityCopy}><Text style={styles.person}>{identity.name}<Text style={styles.role}> / {identity.title}</Text></Text><Text style={styles.location}>{identity.location}</Text></View>
-      <Text style={styles.node}>{src.toUpperCase()}</Text>
-    </View>}
-    <View style={[styles.contactRow, compact && styles.compactContactRow]}><View style={conversation === 'playa' && styles.playaContactCopy}><Text style={[styles.contact, conversation === 'playa' && styles.playaContact, compact && styles.compactContact]}>{conversation === 'playa' ? `${identity.name} → ${identity.contact}` : identity.contact}</Text>{!compact && <Text style={styles.contactPlace}>{identity.contactPlace}</Text>}</View><View style={[styles.meshBadge, conversation === 'playa' && styles.playaMeshBadge]}><View style={[styles.dot, state.connection !== 'connected' && styles.offlineDot]} /><Text style={styles.meshBadgeText}>{compact ? `${state.mode === 'live' ? 'LIVE' : 'SAMPLE'} · ${state.connection === 'connected' ? 'Connected' : state.connection === 'connecting' ? 'Connecting…' : 'Offline'}` : 'MESH'}</Text></View></View>
-    {!compact && <View style={styles.modeRow}><Text style={styles.modeLabel}>{state.mode === 'replay' ? 'Sample replay · example messages' : 'Live simulation'}</Text><Text style={styles.connection}>{state.connection === 'connected' ? 'Connected' : state.connection === 'connecting' ? 'Connecting…' : 'Offline'}</Text></View>}
+    {showIdentity && !compact && <PhoneIdentity role={role} conversation={conversation}/>}
+    {showConversationHeader && <View style={[styles.contactRow, compact && styles.compactContactRow]}><View style={conversation === 'playa' && styles.playaContactCopy}><Text style={[styles.contact, conversation === 'playa' && styles.playaContact, compact && styles.compactContact]}>{conversation === 'playa' ? `${identity.name} → ${identity.contact}` : identity.contact}</Text>{!compact && <Text style={styles.contactPlace}>{identity.contactPlace}</Text>}</View><View style={[styles.meshBadge, conversation === 'playa' && styles.playaMeshBadge]}><View style={[styles.dot, state.connection !== 'connected' && styles.offlineDot]} /><Text style={styles.meshBadgeText}>{compact ? `${state.mode === 'live' ? 'LIVE' : 'SAMPLE'} · ${state.connection === 'connected' ? 'Connected' : state.connection === 'connecting' ? 'Connecting…' : 'Offline'}` : 'MESH'}</Text></View></View>}
+    {showConversationHeader && !compact && <View style={styles.modeRow}><Text style={styles.modeLabel}>{state.mode === 'replay' ? 'Sample replay · example messages' : 'Live simulation'}</Text><Text style={styles.connection}>{state.connection === 'connected' ? 'Connected' : state.connection === 'connecting' ? 'Connecting…' : 'Offline'}</Text></View>}
     <ScrollView ref={list} style={styles.messages} contentContainerStyle={[styles.messageContent, compact && styles.compactMessageContent]} onLayout={() => list.current?.scrollToEnd({ animated: false })} onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
       {!compact && <View style={styles.dayRow}><View style={styles.dayLine}/><Text style={styles.day}>OFF THE GRID. STILL IN SYNC.</Text><View style={styles.dayLine}/></View>}
       {messages.length === 0 && <View style={[styles.empty, compact && styles.compactEmpty]}><Text style={styles.emptyTitle}>A signal through the dust.</Text><Text style={styles.emptyText}>{emptyText}</Text>{role === 'boss' && <Pressable accessibilityRole="button" accessibilityLabel="Use conversation starter" style={styles.starter} onPress={() => setDraft(starter)}><Text style={styles.starterText}>Use conversation starter ↗</Text></Pressable>}</View>}

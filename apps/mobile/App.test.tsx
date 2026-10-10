@@ -17,7 +17,7 @@ vi.mock('expo-audio', () => ({
   setAudioModeAsync: async () => {},
 }));
 beforeEach(() => { audio.recorder.isRecording = false; audio.recorder.stop.mockClear(); });
-afterEach(() => { cleanup(); vi.unstubAllEnvs(); Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true }); });
+afterEach(() => { cleanup(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true }); });
 
 function nativeKeyboard() {
   Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
@@ -123,4 +123,34 @@ it('starts compact if a native keyboard was already visible before mounting', ()
   render(<App />);
   expect(screen.queryByLabelText('Use boss phone')).toBeNull();
   expect(screen.getByLabelText('Dismiss keyboard')).toBeTruthy();
+});
+
+it('compacts hosted web while typing without remounting the draft or recorder', () => {
+  vi.stubEnv('EXPO_PUBLIC_BACKEND_URL', 'https://mesh.example.test');
+  render(<App />);
+  const composer = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+  const recorder = screen.getByLabelText('Record voice');
+  fireEvent.change(composer, { target: { value: 'Web draft\nSecond line' } });
+  act(() => composer.focus());
+  expect(screen.queryByLabelText('Use employee phone')).toBeNull();
+  expect(screen.queryByText('A LITTLE SIGNAL GOES A LONG WAY')).toBeNull();
+  expect(screen.getByLabelText('Message input')).toBe(composer);
+  expect(composer.value).toBe('Web draft\nSecond line');
+  expect(screen.getByLabelText('Record voice')).toBe(recorder);
+  fireEvent.click(screen.getByLabelText('Dismiss keyboard'));
+  expect(screen.getByLabelText('Use employee phone')).toBeTruthy();
+  expect(composer.value).toBe('Web draft\nSecond line');
+});
+
+it('constrains hosted web to the visible browser height as the keyboard resizes it', () => {
+  const viewport = Object.assign(new EventTarget(), { height: 740 });
+  vi.stubGlobal('visualViewport', viewport);
+  const { container, unmount } = render(<App />);
+  const shell = container.firstElementChild as HTMLElement;
+  expect(shell.style.maxHeight).toBe('740px');
+  act(() => { viewport.height = 410; viewport.dispatchEvent(new Event('resize')); });
+  expect(shell.style.maxHeight).toBe('410px');
+  act(() => { viewport.height = 740; viewport.dispatchEvent(new Event('resize')); });
+  expect(shell.style.maxHeight).toBe('740px');
+  unmount();
 });

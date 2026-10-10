@@ -57,6 +57,29 @@ describe('mesh console', () => {
     expect(document.body).not.toHaveTextContent(/Jordan|Alex|San Francisco|The boss|Base camp/);
   });
 
+  it('places both profiles outside the phones and the shared conversation above the mesh', () => {
+    render(<App client={makeClient({ mode: 'live' })}/>);
+    const phone = screen.getByTestId('phone-boss');
+    expect(within(phone).queryByText('/ User 2')).not.toBeInTheDocument();
+    expect(within(phone).queryByText('Malcome → Basith')).not.toBeInTheDocument();
+    const profile = screen.getByRole('group', { name: 'Malcome profile' });
+    expect(profile).toHaveTextContent('Malcome');
+    expect(profile).toHaveTextContent('Deep playa · Mayan Warrior');
+    expect(profile).toHaveTextContent('NODE0');
+    expect(phone.contains(profile)).toBe(false);
+    const receiver = screen.getByTestId('phone-employee');
+    expect(within(receiver).queryByText('/ User 1')).not.toBeInTheDocument();
+    expect(within(receiver).queryByText('Basith → Malcome')).not.toBeInTheDocument();
+    const receiverProfile = screen.getByRole('group', { name: 'Basith profile' });
+    expect(receiverProfile).toHaveTextContent('Basith');
+    expect(receiverProfile).toHaveTextContent('Playa airport');
+    expect(receiverProfile).toHaveTextContent('NODE4');
+    expect(receiver.contains(receiverProfile)).toBe(false);
+    const network = screen.getByRole('region', { name: 'Network console' });
+    expect(within(network).getByRole('heading', { name: 'Malcome → Basith' })).toBeInTheDocument();
+    expect(within(phone).getByRole('textbox', { name: 'Message input' })).toHaveValue('Basith, come meet me at the Mayan Warrior set in deep playa!');
+  });
+
   it('shows the other Burning Man people by their backend names and actual online status', () => {
     const nodes = makeClient().getSnapshot().nodes;
     render(<App client={makeClient({ nodes: [...nodes,

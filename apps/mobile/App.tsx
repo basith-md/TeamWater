@@ -19,12 +19,22 @@ export default function App() {
   const [keyboardVisible, setKeyboardVisible] = useState(() => Platform.OS !== 'web' && Keyboard.isVisible());
   const [composerFocused, setComposerFocused] = useState(false);
   const native = Platform.OS !== 'web';
-  const compact = native && (keyboardVisible || composerFocused);
+  const compact = keyboardVisible || composerFocused;
+  const [viewportHeight, setViewportHeight] = useState<number | null>(() => Platform.OS === 'web' && typeof window !== 'undefined' ? window.visualViewport?.height ?? null : null);
   const [error, setError] = useState<string | null>(null);
   const [client] = useState(() => createMeshClient({ mode: defaults.mode, endpoint: defaults.endpoint }));
 
   useEffect(() => { client.start(); return () => client.dispose(); }, [client]);
   useEffect(() => { client.setMode(mode, endpoint); }, [client, mode, endpoint]);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const resize = () => setViewportHeight(viewport.height);
+    resize();
+    viewport.addEventListener('resize', resize);
+    return () => viewport.removeEventListener('resize', resize);
+  }, []);
   useEffect(() => {
     if (Platform.OS === 'web') return;
     setKeyboardVisible(Keyboard.isVisible());
@@ -54,7 +64,7 @@ export default function App() {
     setEndpoint(next); setEndpointDraft(next); setError(null);
   }
 
-  return <KeyboardAvoidingView style={[styles.app, compact && styles.typingApp]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+  return <KeyboardAvoidingView style={[styles.app, compact && styles.typingApp, viewportHeight !== null && { height: viewportHeight, maxHeight: viewportHeight }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <StatusBar barStyle="light-content" backgroundColor="#232825"/>
     <View style={[styles.top, native && styles.nativeTop, compact && styles.typingTop]}>
       <View><Text style={[styles.brand, compact && styles.typingBrand]}>TEAMWATER<Text style={styles.brandDot}>.</Text></Text>{!compact && <Text style={styles.tagline}>A LITTLE SIGNAL GOES A LONG WAY</Text>}</View>
@@ -74,7 +84,7 @@ export default function App() {
       {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
       <Text style={styles.help}>Live simulation runs your messages through the mesh. Sample replay shows prerecorded examples.</Text>
     </View>}
-    <PhoneChat key={role} client={client} role={role} compact={compact} onComposerFocusChange={focused => { setComposerFocused(focused); if (focused && native) setSettingsOpen(false); }} pickMedia={pickMedia} renderAudio={uri => <ReceivedAudio key={uri} uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>}/>
+    <PhoneChat key={role} client={client} role={role} compact={compact} onComposerFocusChange={focused => { setComposerFocused(focused); if (focused) setSettingsOpen(false); }} pickMedia={pickMedia} renderAudio={uri => <ReceivedAudio key={uri} uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>}/>
   </KeyboardAvoidingView>;
 }
 

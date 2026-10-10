@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Activity, ArrowDownLeft, ArrowUpRight, ChevronRight, CircleHelp, Radio, RotateCcw, Settings2, ShieldCheck, Signal, Waves, X } from 'lucide-react';
 import { deliveryLabel, deriveTelemetry, useMesh } from '@teamwater/core';
 import type { MeshClient, MeshEvent, MeshMessage, MeshState } from '@teamwater/core';
-import { PhoneChat } from '@teamwater/mobile-ui';
+import { PhoneChat, PhoneIdentity } from '@teamwater/mobile-ui';
 import { pickBrowserMedia } from './browserMedia';
 import { VerifiedAudio } from './VerifiedAudio';
 import { useTracePlayback } from './useTracePlayback';
@@ -134,10 +134,10 @@ export function App({ client }: { client: MeshClient }) {
       <div className="page-heading"><div><div className="eyebrow">OFF-GRID COMMUNICATION / PLAYA MESH</div><h1>Find your people.<br className="mobile-break"/> Across the playa.</h1><p>Malcome is at Mayan Warrior in deep playa. Basith is at the playa airport. Watch their messages hop through the local mesh.</p></div></div>
       {state.error && <div className="error-banner" role="alert">{state.error}</div>}
       <div className="demo-stage">
-        <aside className="phone-column boss-phone" aria-label="Malcome · User 2 · Deep playa"><div className="phone-label"><span className="participant-number">02</span><div><strong>Malcome · User 2</strong><span>Deep playa · node0</span></div><ArrowUpRight size={18}/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat client={client} role="boss" conversation="playa" initialDraft="Basith, come meet me at the Mayan Warrior set in deep playa!" embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>Mayan Warrior · Deep playa</div></aside>
+        <aside className="phone-column boss-phone" aria-label="Malcome · User 2 · Deep playa"><div className="phone-profile" role="group" aria-label="Malcome profile"><PhoneIdentity role="boss" conversation="playa"/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat client={client} role="boss" conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft="Basith, come meet me at the Mayan Warrior set in deep playa!" embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>Mayan Warrior · Deep playa</div></aside>
 
         <section className="console-column" aria-label="Network console">
-          <div className="replay-toolbar" role="status" aria-label="Simulation status"><span className="nodes-status"><Radio size={13}/>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div>
+          <div className="network-conversation"><div className="network-conversation-title"><h2>Malcome → Basith</h2><span className="network-mesh-badge"><i/>MESH</span></div><p>Playa airport</p><div className="network-conversation-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div></div>
           <div className="mode-note"><CircleHelp size={12}/>Off-grid phones in a local mesh simulation · running simulator required.</div>
 
           <section className="topology-panel"><div className="panel-heading"><div><span className="eyebrow">THE NETWORK</span><h2>Every hop counts.</h2></div><span className="nodes-status"><i/>{state.nodes.filter(node => node.online).length} / {state.nodes.length} nodes online</span></div>
@@ -153,7 +153,7 @@ export function App({ client }: { client: MeshClient }) {
           </section>
         </section>
 
-        <aside className="phone-column employee-phone" aria-label="Basith · User 1 · Playa airport"><div className="phone-label"><span className="participant-number">01</span><div><strong>Basith · User 1</strong><span>Playa airport · node4</span></div><ArrowDownLeft size={18}/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat client={client} role="employee" conversation="playa" initialDraft="On my way from the playa airport. See you at Mayan Warrior!" embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>Playa airport</div></aside>
+        <aside className="phone-column employee-phone" aria-label="Basith · User 1 · Playa airport"><div className="phone-profile" role="group" aria-label="Basith profile"><PhoneIdentity role="employee" conversation="playa"/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat client={client} role="employee" conversation="playa" showIdentity={false} showConversationHeader={false} initialDraft="On my way from the playa airport. See you at Mayan Warrior!" embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>Playa airport</div></aside>
       </div>
       <footer className="page-footer"><span><Waves size={14}/> BUILT TO KEEP PEOPLE CONNECTED.</span><span>TeamWater / CHRP <span className="footer-cross">+</span></span></footer>
     </main>

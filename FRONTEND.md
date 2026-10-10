@@ -58,18 +58,29 @@ Use `http://127.0.0.1:8000` from iOS Simulator, `http://10.0.2.2:8000` from an A
 
 Launch links can select each phone's role and endpoint, for example `exp://127.0.0.1:8081/--/?role=employee&mode=live&endpoint=http%3A%2F%2F127.0.0.1%3A8001`. Select Boss/Playa in the app to change roles without restarting.
 
+## Shared team preview
+
+Open [the hosted phone app](https://chrp-team.lucas-crawford-richards.workers.dev) on every phone and enter the team password provided separately. It runs in Safari or Chrome; Expo account membership is not required. Select Boss on one phone and Playa on another. These are two shared demo identities, not separate accounts for each teammate.
+
+Cloudflare serves the Expo web export behind server-side password authentication and a signed, expiring cookie. HTTP and WebSocket traffic uses the same `/api` origin. The Python mesh service remains on the development Mac, reached through an origin-token-protected tunnel; the Mac, service, and tunnel must stay running. This protected web session is separate from the earlier native Expo demo backend. Use the same hosted URL on all phones for this shared session.
+
+The worker lives in `apps/team-preview`; `deployment/teamwater_origin.py` wraps the backend without changing the team's service implementation. Deployment secrets are held in macOS Keychain and sent to Cloudflare via stdin, never checked into git. Rebuild with `npm run build --workspace @teamwater/team-preview`, then deploy the prebuilt worker using the saved secrets. The web build deliberately clears Metro's cache so native EAS environment values cannot leak into the hosted connection configuration.
+
+Native and mobile-web chat compact their headers while typing, preserve the draft and recorder, and reserve the remaining viewport for messages. A Done button dismisses the keyboard. Physical-device keyboard geometry still needs confirmation; automated tests cover focus, draft preservation, and keyboard events.
+
 ## Expo Go on iPhone and Android
 
-The EAS project is [ravejedii/teamwater](https://expo.dev/accounts/ravejedii/projects/teamwater). The voice/mesh preview was published from commit `1648c05` for both iOS and Android. Share the [teammate preview launcher](https://expo.dev/preview/update?message=Voice+recording%2C+readable+mesh+traces%2C+and+shared+OpenAPI+1.1+metrics&updateRuntimeVersion=exposdk%3A57.0.0&createdAt=2026-10-10T17%3A39%3A07.334Z&slug=exp&projectId=12bc6cfe-8f05-43f8-8381-14401575cff8&group=ae210d34-d674-44c1-a662-26777c353814), then choose **Expo Go**. The account dashboard URL is an administrative update page, not an app launcher. Expo's Expo Go preview webpage may require Expo sign-in.
+The EAS project is [ravejedii/teamwater](https://expo.dev/accounts/ravejedii/projects/teamwater). The latest native keyboard fix was published from commit `0640c52` for iOS and Android, SDK 57, update group `e9ccb226-e494-41d2-9cad-5a1e779b7399`. The account dashboard URL is administrative, not an app launcher. Published Expo Go previews require Expo sign-in and ownership or membership of the project's owning organization; a QR code does not grant access. Use the hosted team preview above for immediate sharing. See [Expo's published-project access rules](https://expo.dev/changelog/expo-go-loading-changes-may-2026).
 
-With compatible Expo Go already installed, [open the app directly](exp://u.expo.dev/12bc6cfe-8f05-43f8-8381-14401575cff8/group/ae210d34-d674-44c1-a662-26777c353814), or [scan the Expo Go QR code](https://qr.expo.dev/eas-update?projectId=12bc6cfe-8f05-43f8-8381-14401575cff8&groupId=ae210d34-d674-44c1-a662-26777c353814) from another screen. Some chat browsers do not open `exp://` links; use the HTTPS preview launcher in Safari or Chrome in that case. Use SDK 57-compatible Expo Go on both devices. The published preview uses `EXPO_PUBLIC_BACKEND_URL` from the EAS **preview** environment and starts in live mode. Choose **Boss / node0** on one phone and **Playa / node4** on the other. These are two shared demo identities, not individual teammate accounts.
+With compatible Expo Go already installed, [open the app directly](exp://u.expo.dev/12bc6cfe-8f05-43f8-8381-14401575cff8/group/e9ccb226-e494-41d2-9cad-5a1e779b7399), or [scan the Expo Go QR code](https://qr.expo.dev/eas-update?projectId=12bc6cfe-8f05-43f8-8381-14401575cff8&groupId=e9ccb226-e494-41d2-9cad-5a1e779b7399) from another screen. Some chat browsers do not open `exp://` links; use the HTTPS preview launcher in Safari or Chrome in that case. Current store Expo Go supports SDK 57; verify the installed version against [the official release announcement](https://expo.dev/changelog/expo-go-57-login). An older troubleshooting page incorrectly described the store as SDK 54-only; do not downgrade this project based on that page. The published preview uses `EXPO_PUBLIC_BACKEND_URL` from the EAS **preview** environment and starts in live mode. Choose **Boss / node0** on one phone and **Playa / node4** on the other. These are two shared demo identities, not individual teammate accounts.
 
 The current preview backend runs on the development Mac through a temporary HTTPS Cloudflare tunnel. The Mac, Python service and tunnel must remain running. If that tunnel is replaced, update the public backend URL in EAS and publish again, or enter the replacement URL in the app's Settings. This is a device-testing setup, not a permanent backend deployment. No backend credentials are embedded in the app.
 
 To publish an update from `apps/mobile`:
 
 ```sh
-npx eas-cli update --branch preview --environment preview --platform all --message "Describe the change"
+cd ../..
+npm run publish:preview -- --message "Describe the change"
 ```
 
 For local development, copy `apps/mobile/.env.example` to `.env.local`, set `EXPO_PUBLIC_BACKEND_URL` to a phone-reachable backend, then run `npm run mobile` from the root. Without a valid configured URL, a local Expo session starts in sample replay. The console's local `/api` proxy is not available to native phones.
@@ -95,3 +106,7 @@ Browser tests use a visible Chrome window. The test suite covers message routing
 ## Delivery wording
 
 `Delivered` requires destination integrity verification **and** a terminal receipt at the sender. Main's `delivered` field only confirms chunk ACKs; the frontend displays **ACK received** and explicitly says verification is unavailable. With the newer branch, the receiver can read verified content while the sender still shows **receipt pending** or **receipt unconfirmed**. Full text is fetched from the recovered content endpoint, never reconstructed from its truncated preview. Missing measurements are displayed as unavailable rather than zero.
+
+## Coding workspace status
+
+The shared `CodeWorkspace` and `JordanWorkspace` components and their tests are available for review. They are not wired into the deployed app yet. They support honest externally supplied workflow state for prototype and bug-fix paths; no Ninoo execution, PR creation, or deployment completion is simulated or claimed by this preview.

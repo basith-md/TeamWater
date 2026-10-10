@@ -8,7 +8,8 @@
     "ios": "expo start --ios",
     "android": "expo start --android",
     "web": "expo start --web",
-    "export": "expo export --platform all"
+    "export": "expo export --platform all",
+    "publish:preview": "expo install --check && npx eas-cli update --branch preview --environment preview --platform all"
   },
   "dependencies": {
     "@teamwater/core": "0.1.0",
