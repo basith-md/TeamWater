@@ -451,3 +451,25 @@ class PhoneModuleVectorTests(unittest.TestCase):
         frame = bytes.fromhex(v["request_frame_hex"])
         plain = security.unseal(bytes.fromhex(v["key_hex"]), v["request_id"], v["device_id"], frame[20:], b"Q")
         self.assertEqual((plain[0], plain[1:].decode()), (v["model_index"], v["question"]))
+
+
+class RelayHardeningTests(ConnectTests):
+    def test_stale_or_future_timestamp_is_refused(self):
+        asker, gw, _ = self.two_phones()
+        rid = str(uuid.uuid4())
+        body = json.dumps({"request_id": rid, "device_id": asker[0],
+                           "sealed": security.b64e(security.seal(asker[1], rid, asker[0], b"\x00hi"))}).encode()
+        for ts in (str(time.time() - 600), str(time.time() + 600), "not-a-number"):
+            r = TestClient(self.app).post("/v1/relay", content=body, headers={
+                "X-Device-Id": str(gw[0]), "X-Timestamp": ts, "X-Signature": security.sign(gw[1], ts, body)})
+            self.assertEqual(r.status_code, 401, ts)
+        self.assertEqual(self.provider.calls, [])
+
+    def test_request_id_cannot_be_hijacked_by_another_device(self):
+        asker, gw, gid = self.two_phones()
+        other = self.connect_device(self.web, gid)
+        rid, first = self.ask(gw, asker, "How fast is the Long Fast preset?")
+        sealed = security.seal(other[1], rid, other[0], b"\x00How fast is Short Turbo?")
+        r = self.relay(gw, rid, other[0], sealed)
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(len(self.provider.calls), 1)
