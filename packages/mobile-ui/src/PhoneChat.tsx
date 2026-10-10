@@ -2,6 +2,8 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncEx
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { deliveryLabel, roleNodes } from '@teamwater/core';
 import type { MediaAsset, MeshClient, MeshMessage, Role } from '@teamwater/core';
+import { AiChat } from './AiChat';
+import type { ModelPickerProps } from './AiChat';
 export interface VoiceRecorderProps {
   onSend: (asset: MediaAsset) => Promise<void>;
   disabled: boolean;
@@ -22,7 +24,12 @@ export interface PhoneChatProps {
   pickMedia?: (kind: 'image' | 'voice') => Promise<MediaAsset | null>;
   renderAudio?: (uri: string) => React.ReactNode;
   renderVoiceRecorder?: (props: VoiceRecorderProps) => React.ReactNode;
+  /** Show the Messages / Water AI tabs. */
+  aiTab?: boolean;
+  nodeName?: (id: string) => string;
+  renderModelPicker?: (props: ModelPickerProps) => React.ReactNode;
 }
+const CHAT_KINDS = new Set<MeshMessage['kind']>(['text', 'image', 'voice', 'video']);
 const identities = {
   work: {
     boss: { name: 'Alex', title: 'Team lead', location: 'San Francisco, CA', initial: 'A', contact: 'Jordan', contactPlace: 'Burning Man · Black Rock City' },
@@ -44,7 +51,8 @@ export function PhoneIdentity({ role, conversation = 'work', endpoints }: Pick<P
     </View>;
 }
 
-export function PhoneChat({ client, role, endpoints, conversation = 'work', initialDraft = '', demoDraft, disabled = false, embedded = false, compact = false, showIdentity = true, showConversationHeader = true, onComposerFocusChange, pickMedia, renderAudio, renderVoiceRecorder }: PhoneChatProps) {
+export function PhoneChat({ client, role, endpoints, conversation = 'work', initialDraft = '', demoDraft, disabled = false, embedded = false, compact = false, showIdentity = true, showConversationHeader = true, onComposerFocusChange, pickMedia, renderAudio, renderVoiceRecorder, aiTab = false, nodeName, renderModelPicker }: PhoneChatProps) {
+  const [tab, setTab] = useState<'chat' | 'ai'>('chat');
   const { fontScale } = useWindowDimensions();
   const inputScale = Number.isFinite(fontScale) && fontScale > 1 ? fontScale : 1;
   const state = useSyncExternalStore(client.subscribe.bind(client), client.getSnapshot.bind(client), client.getSnapshot.bind(client));
@@ -80,7 +88,8 @@ export function PhoneChat({ client, role, endpoints, conversation = 'work', init
     : role === 'boss' ? 'Jordan is at Burning Man. Send a message to ask for help with the code.' : 'Chatting with Alex through the mesh. Send a reply when you’re ready.';
   const starter = conversation === 'playa' ? 'Hey Basith — come join us at Mayan Warrior on the deep playa!' : 'Hey Jordan — I know you’re at Burning Man, but could you help fix the code when you get a signal?';
   const { src, dst } = endpoints ?? roleNodes(role);
-  const messages = Object.values(state.messages).filter(message => (message.src === src && message.dst === dst) || (message.src === dst && message.dst === src)).sort((a, b) => {
+  // AI transfers (sealed ai_request / ai_response) cross the same mesh but belong to the Water AI tab.
+  const messages = Object.values(state.messages).filter(message => CHAT_KINDS.has(message.kind) && ((message.src === src && message.dst === dst) || (message.src === dst && message.dst === src))).sort((a, b) => {
     if (a.createdAt === null) return b.createdAt === null ? a.id.localeCompare(b.id) : 1;
     if (b.createdAt === null) return -1;
     return a.createdAt - b.createdAt || a.id.localeCompare(b.id);
@@ -125,6 +134,10 @@ export function PhoneChat({ client, role, endpoints, conversation = 'work', init
   return <View style={[styles.phone, embedded && styles.embedded]}>
     {showIdentity && !compact && <PhoneIdentity role={role} conversation={conversation}/>}
     {showConversationHeader && <View style={[styles.contactRow, compact && styles.compactContactRow]}><View style={conversation === 'playa' && styles.playaContactCopy}><Text style={[styles.contact, conversation === 'playa' && styles.playaContact, compact && styles.compactContact]}>{conversation === 'playa' ? `${identity.name} → ${identity.contact}` : identity.contact}</Text>{!compact && <Text style={styles.contactPlace}>{identity.contactPlace}</Text>}</View><View style={[styles.meshBadge, conversation === 'playa' && styles.playaMeshBadge]}><View style={[styles.dot, state.connection !== 'connected' && styles.offlineDot]} /><Text style={styles.meshBadgeText}>{compact ? `${state.mode === 'live' ? 'LIVE' : 'SAMPLE'} · ${state.connection === 'connected' ? 'Connected' : state.connection === 'connecting' ? 'Connecting…' : 'Offline'}` : 'MESH'}</Text></View></View>}
+    {aiTab && <View style={styles.tabs} accessibilityRole="tablist">
+      {(['chat', 'ai'] as const).map(t => <Pressable key={t} accessibilityRole="tab" accessibilityState={{ selected: tab === t }} accessibilityLabel={t === 'chat' ? 'Messages tab' : 'Water AI tab'} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]}><Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t === 'chat' ? 'Messages' : '✦ Water AI'}</Text></Pressable>)}
+    </View>}
+    {aiTab && tab === 'ai' ? <AiChat client={client} src={src} nodeName={nodeName} renderModelPicker={renderModelPicker} disabled={disabled}/> : <>
     {showConversationHeader && !compact && <View style={styles.modeRow}><Text style={styles.modeLabel}>{state.mode === 'replay' ? 'Sample replay · example messages' : 'Live simulation'}</Text><Text style={styles.connection}>{state.connection === 'connected' ? 'Connected' : state.connection === 'connecting' ? 'Connecting…' : 'Offline'}</Text></View>}
     <ScrollView ref={list} style={styles.messages} contentContainerStyle={[styles.messageContent, compact && styles.compactMessageContent]} onLayout={() => list.current?.scrollToEnd({ animated: false })} onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
       {!compact && <View style={styles.dayRow}><View style={styles.dayLine}/><Text style={styles.day}>OFF THE GRID. STILL IN SYNC.</Text><View style={styles.dayLine}/></View>}
@@ -137,6 +150,7 @@ export function PhoneChat({ client, role, endpoints, conversation = 'work', init
       <View style={styles.compose}><TextInput ref={inputRef} accessibilityLabel="Message input" placeholder={`Message ${identity.contact}…`} placeholderTextColor="#8d8982" value={draft} editable={!disabled} onChangeText={text => { if (disabled) return; setDraft(text); if (!text) setContentHeight(0); }} onContentSizeChange={event => setContentHeight(event.nativeEvent.contentSize.height)} onFocus={() => { onComposerFocusChange?.(true); list.current?.scrollToEnd({ animated: false }); }} onBlur={() => onComposerFocusChange?.(false)} multiline numberOfLines={2} textAlignVertical="top" maxLength={8000} scrollEnabled style={[styles.input, { height: inputHeight, minHeight: inputMinHeight, maxHeight: inputMaxHeight }]}/><Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={disabled || busy || !draft.trim()} onPress={send} style={[styles.send, (disabled || busy || !draft.trim()) && styles.disabled]}>{busy ? <ActivityIndicator color="#fff" size="small"/> : <Text style={styles.sendArrow}>↑</Text>}</Pressable></View>
       <View style={styles.composeFooter}><View style={styles.attachments}><Pressable accessibilityRole="button" accessibilityLabel="Attach image" disabled={disabled || busy} onPress={() => attach('image')} style={styles.attachment}><Text style={styles.attachmentText}>▧ Image</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Attach voice file" disabled={disabled || busy} onPress={() => attach('voice')} style={styles.attachment}><Text style={styles.attachmentText}>≋ Audio file</Text></Pressable></View>{!compact && <Text accessibilityLabel={state.mode === 'replay' ? 'Voice recording requires Live mode' : renderVoiceRecorder ? undefined : 'Voice recording unavailable in this view'} style={styles.composeHint}>{state.mode === 'replay' ? 'VOICE: LIVE ONLY' : renderVoiceRecorder ? 'STORE · FORWARD' : 'RECORDER UNAVAILABLE'}</Text>}</View>
     </View>
+    </>}
   </View>;
 }
 
@@ -165,6 +179,9 @@ function MessageBubble({ message, outgoing, mode, sender, renderAudio }: { messa
 }
 
 const styles = StyleSheet.create({
+  tabs: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 10, padding: 3, borderRadius: 9, backgroundColor: '#eceae1' },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 7 }, tabActive: { backgroundColor: '#fffcf7', shadowColor: '#27342615', shadowOpacity: 1, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
+  tabText: { fontSize: 11, fontWeight: '600', color: '#7d8577' }, tabTextActive: { color: '#2b332c' },
   playaContactCopy: { flex: 1, minWidth: 0, marginRight: 8 }, playaContact: { fontSize: 20, flexShrink: 1 }, playaMeshBadge: { flexShrink: 0 },
   phone: { flex: 1, flexShrink: 1, minHeight: 0, backgroundColor: '#faf8f3', overflow: 'hidden' }, embedded: { minHeight: 620 },
   compactContactRow: { paddingHorizontal: 12, paddingVertical: 7, borderBottomWidth: 1, borderColor: '#e9e5dc' }, compactContact: { fontSize: 16 }, compactMessageContent: { padding: 10, gap: 12 }, compactEmpty: { paddingVertical: 10 }, compactComposeArea: { paddingHorizontal: 10, paddingVertical: 8 },

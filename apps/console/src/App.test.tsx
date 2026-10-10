@@ -47,6 +47,39 @@ function makeClient(overrides: Partial<MeshState> = {}): MeshClient & { publish:
 }
 
 describe('mesh console', () => {
+  it('offers Water AI on both phones and selects a named internet gateway', async () => {
+    const client = makeClient({ mode: 'live', ai: { internetNode: 'node2', connectedNodes: ['node0', 'node2', 'node4'], requests: [] } });
+    client.askAi = async () => 'ai-request';
+    client.setInternetNode = async internetNode => client.publish({ ai: { ...client.getSnapshot().ai!, internetNode } });
+    render(<App client={client}/>);
+    const left = within(screen.getByTestId('phone-boss'));
+    const right = within(screen.getByTestId('phone-employee'));
+    fireEvent.click(left.getByLabelText('Water AI tab'));
+    fireEvent.click(right.getByLabelText('Water AI tab'));
+    expect(left.getByText('Gateway: Lucas has internet')).toBeVisible();
+    expect(right.getByText('Gateway: Lucas has internet')).toBeVisible();
+    await act(async () => fireEvent.change(screen.getByLabelText('Internet node'), { target: { value: '' } }));
+    expect(left.getByText('No phone has internet: questions will wait')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Play demo' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Reset demo' })).toBeEnabled();
+  });
+
+  it('links AI setup to the selected backend', () => {
+    render(<App client={makeClient({ mode: 'live', endpoint: 'wss://mesh.example/ws' })}/>);
+    expect(screen.getByRole('link', { name: 'AI setup' })).toHaveAttribute('href', 'https://mesh.example/connect/');
+  });
+
+  it('clears an internet-node failure after a successful retry', async () => {
+    const client = makeClient({ mode: 'live', ai: { internetNode: 'node2', connectedNodes: ['node0', 'node2', 'node4'], requests: [] } });
+    client.setInternetNode = async () => { throw new Error('Gateway change failed'); };
+    render(<App client={client}/>);
+    await act(async () => fireEvent.change(screen.getByLabelText('Internet node'), { target: { value: '' } }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Gateway change failed');
+    client.setInternetNode = async internetNode => client.publish({ ai: { ...client.getSnapshot().ai!, internetNode } });
+    await act(async () => fireEvent.change(screen.getByLabelText('Internet node'), { target: { value: 'node4' } }));
+    expect(screen.queryByText('Gateway change failed')).not.toBeInTheDocument();
+  });
+
   it('plays visible 70ms typing in both composers and waits for each verified receipt', async () => {
     vi.useFakeTimers();
     const invitation = 'Basith, come meet me at the Mayan Warrior set in deep playa!';

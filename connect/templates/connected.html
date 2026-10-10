@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block main_class %}narrow{% endblock %}{% block body %}
+<div class="eyebrow">Phone connected</div>
+<h1>Go back to Water</h1>
+<p class="muted">If Water didn't open by itself, paste this one-time setup code into Water → Settings → Enable AI. It expires in 5 minutes and works once.</p>
+<input id="code" class="big-code" type="text" readonly value="{{ token }}" aria-label="Setup code" style="width:100%;border:0">
+<button type="button" class="btn ghost" data-copy="code">Copy code</button>
+<p class="small muted" style="margin-top:20px"><a href="{{ base }}/">Back to your groups</a></p>
+{% endblock %}

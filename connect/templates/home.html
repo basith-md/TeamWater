@@ -1,0 +1,57 @@
+{% extends "base.html" %}{% block body %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Your groups</div>
+    <h1>{{ 'Set up Water AI' if not groups else 'Groups' }}</h1>
+    <p class="lede">{{ 'Four steps. After this, anyone in your group can ask questions over the mesh.' if not groups else 'Phones in the same group can relay each other\'s AI questions.' }}</p>
+  </div>
+</div>
+
+<div class="grid side">
+  <div>
+    {% if groups %}
+    <div class="grid">
+      {% for g in groups %}
+      <a class="group-link" href="{{ base }}/groups/{{ g.id }}">
+        <div><h3>{{ g.name }}</h3><span class="small muted">{{ g.members }} member{{ 's' if g.members != 1 }} · {{ g.phones }} phone{{ 's' if g.phones != 1 }} · {{ g.role }}</span></div>
+        <span class="badge {{ 'ok' if g.phones else 'warn' }}"><i></i>{{ 'AI ready' if g.phones else 'No phones yet' }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    <div class="panel" style="margin-top:18px">
+      <h2>New group</h2>
+      <form method="post" action="{{ base }}/groups" class="inline-form" style="margin-top:12px">
+        <input type="text" name="name" placeholder="e.g. Camp Sunrise" aria-label="Group name" required>
+        <button class="btn">Create</button>
+      </form>
+    </div>
+    {% else %}
+    <div class="panel">
+      <h2>Name your group</h2>
+      <p class="muted small">Usually your camp or crew. Members' phones relay AI questions for each other.</p>
+      <form method="post" action="{{ base }}/groups">
+        <label for="gname">Group name</label>
+        <input id="gname" type="text" name="name" placeholder="e.g. Camp Sunrise" required autofocus>
+        <button class="btn block">Create group</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  <aside class="panel">
+    <h2>Setup</h2>
+    <p class="small muted" style="margin-top:0">{{ checklist|selectattr('done')|list|length }} of {{ checklist|length }} done</p>
+    <ol class="steps">
+      {% set ns = namespace(current=false) %}
+      {% for s in checklist %}
+      {% set is_current = not s.done and not ns.current %}{% if is_current %}{% set ns.current = true %}{% endif %}
+      <li class="step {{ 'done' if s.done }} {{ 'current' if is_current }}">
+        <span class="step-num">{{ '✓' if s.done else loop.index }}</span>
+        <div class="step-body"><h3>{{ s.title }}</h3><p>{{ s.hint }}</p></div>
+        {% if is_current and s.href %}<a class="btn small" href="{{ s.href }}">Go</a>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </aside>
+</div>
+{% endblock %}

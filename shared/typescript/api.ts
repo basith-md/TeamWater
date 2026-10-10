@@ -4,6 +4,111 @@
  */
 
 export interface paths {
+    "/ai/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a sealed AI question from a connected simulated phone */
+        post: operations["askAi"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/gateway": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Select the simulated internet node, or clear it with an empty node_id */
+        post: operations["setAiGateway"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connect/v1/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the append-only model catalog and its one-byte indexes */
+        get: operations["listAiModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connect/v1/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange a single-use setup token for device credentials */
+        post: operations["exchangeAiSetupToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connect/v1/relay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Relay a sealed question and retrieve a sealed answer idempotently
+         * @description Authenticate with the gateway device's HMAC-SHA256 signature over the exact timestamp header, a dot, and the raw JSON body. The question and answer remain sealed with the asker's device key. These paths use the mesh service's /connect mount; standalone Water Connect serves the same operations under /v1.
+         */
+        post: operations["relayAiRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connect/v1/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record delivery of an AI answer */
+        post: operations["recordAiReceipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/send/text": {
         parameters: {
             query?: never;
@@ -226,6 +331,158 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        AiStage: "waiting_for_gateway" | "to_gateway" | "ai_working" | "answer_arriving" | "answered" | "failed";
+        /** @enum {string} */
+        AiOutcome: "ok" | "general" | "blocked" | "over_budget" | "no_grounding" | "error";
+        AiStageChange: {
+            stage: components["schemas"]["AiStage"];
+            /** @description Unix seconds */
+            at: number;
+        };
+        AiState: {
+            internet_node: string | null;
+            connected_nodes: string[];
+            requests: components["schemas"]["AiRequest"][];
+        };
+        AiRequest: {
+            /** Format: uuid */
+            request_id: string;
+            asker: string;
+            gateway: string | null;
+            question: string;
+            model_index: number;
+            model: string;
+            stage: components["schemas"]["AiStage"];
+            stages: components["schemas"]["AiStageChange"][];
+            attempts: number;
+            request_msg_ids: string[];
+            answer_msg_ids: string[];
+            answer: string | null;
+            outcome: components["schemas"]["AiOutcome"] | null;
+            sources: string[];
+            receipt: boolean;
+            error: string;
+            /** @description Unix seconds */
+            created_at: number;
+            note: string;
+            server_view?: components["schemas"]["AiServerView"];
+        };
+        AiGuardrail: {
+            flagged: boolean;
+            patterns: number;
+            checker: string;
+        };
+        AiSource: {
+            source: string;
+            excerpt: string;
+        };
+        AiServerView: {
+            model?: string | null;
+            kb_via?: string | null;
+            guardrail?: components["schemas"]["AiGuardrail"] | null;
+            sources?: components["schemas"]["AiSource"][] | null;
+        };
+        AiModel: {
+            /** @description Append-only wire catalog index */
+            index: number;
+            id: string;
+            provider: string;
+            label: string;
+            /** @description USD per million input tokens */
+            price_in: number;
+            /** @description USD per million output tokens */
+            price_out: number;
+            /** @description Context window in thousands of tokens */
+            context_k: number;
+            tier: string;
+            privacy: string;
+            /** @enum {string} */
+            privacy_level: "ok" | "unknown" | "avoid";
+        };
+        AiAskRequest: {
+            src: string;
+            /** @description Nonempty after whitespace normalization, at most 400 UTF-8 bytes */
+            question: string;
+            /** @description Defaults to 0; unknown indexes fall back to the default model */
+            model_index?: number;
+        };
+        AiAskResponse: {
+            /** Format: uuid */
+            request_id: string;
+        };
+        AiGatewayRequest: {
+            /** @description Empty or omitted clears the gateway */
+            node_id?: string;
+        };
+        AiGatewayResponse: {
+            internet_node: string | null;
+        };
+        AiSetupRequest: {
+            token: string;
+        };
+        AiSetupResponse: {
+            device_id: number;
+            group_id: number;
+            /** @description Base64 device key; keep on the phone */
+            device_key: string;
+            models: components["schemas"]["AiModel"][];
+            default_model: number;
+        };
+        AiRelayRequest: {
+            /** Format: uuid */
+            request_id: string;
+            /** @description Asker device ID */
+            device_id: number;
+            /** @description Base64 sealed model-index byte and UTF-8 question */
+            sealed: string;
+        };
+        /** @description Public diagnostics only; question and answer plaintext are never included */
+        AiRelayMeta: {
+            model?: string;
+            kb_via?: string;
+            guardrail?: components["schemas"]["AiGuardrail"];
+            sources?: components["schemas"]["AiSource"][];
+            outcome?: components["schemas"]["AiOutcome"];
+            provider?: string;
+            verified?: boolean;
+            verified_grounding?: boolean;
+            secrets_flagged?: boolean;
+            full_bytes?: number;
+            short_bytes?: number;
+            evaluation_id?: string | null;
+            note?: string;
+            gateway_device?: number;
+        };
+        AiRelayAnswered: {
+            /** Format: uuid */
+            request_id: string;
+            /** @enum {string} */
+            state: "answered";
+            /** @description Base64 answer sealed with the asker's device key */
+            answer: string;
+            meta: components["schemas"]["AiRelayMeta"];
+        };
+        AiRelayClaimed: {
+            /** Format: uuid */
+            request_id: string;
+            /** @enum {string} */
+            state: "already_claimed";
+            by_you: boolean;
+            /** @description Seconds until the current claim expires */
+            retry_after: number;
+        };
+        AiRelayResponse: components["schemas"]["AiRelayAnswered"] | components["schemas"]["AiRelayClaimed"];
+        AiReceiptRequest: {
+            /** Format: uuid */
+            request_id: string;
+        };
+        AiReceiptResponse: {
+            /** Format: uuid */
+            request_id: string;
+            /** @enum {string} */
+            state: "receipt_recorded";
+        };
         NodeSummary: {
             id: string;
             name: string;
@@ -288,6 +545,8 @@ export interface components {
             eta_basis?: string;
         };
         MeshState: {
+            /** @description AI gateway state; older mesh services omit this field */
+            ai?: components["schemas"]["AiState"] | null;
             nodes: components["schemas"]["Node"][];
             connections: {
                 [key: string]: string[];
@@ -429,13 +688,241 @@ export interface components {
         };
     };
     responses: never;
-    parameters: never;
+    parameters: {
+        AiDeviceId: number;
+        /** @description Unix seconds within five minutes of the server clock */
+        AiTimestamp: string;
+        /** @description Hex HMAC-SHA256 using the gateway device key */
+        AiSignature: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    askAi: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AiAskRequest"];
+            };
+        };
+        responses: {
+            /** @description Request accepted; progress appears in MeshState.ai */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiAskResponse"];
+                };
+            };
+            /** @description Unknown or unconnected phone, empty question, or question over 400 UTF-8 bytes */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid form fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    setAiGateway: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["AiGatewayRequest"];
+            };
+        };
+        responses: {
+            /** @description Current internet node */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiGatewayResponse"];
+                };
+            };
+            /** @description Unknown node */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listAiModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Model catalog */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiModel"][];
+                };
+            };
+        };
+    };
+    exchangeAiSetupToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiSetupRequest"];
+            };
+        };
+        responses: {
+            /** @description Device key and model configuration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSetupResponse"];
+                };
+            };
+            /** @description Invalid, expired, or already used token */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    relayAiRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Device-Id": components["parameters"]["AiDeviceId"];
+                /** @description Unix seconds within five minutes of the server clock */
+                "X-Timestamp": components["parameters"]["AiTimestamp"];
+                /** @description Hex HMAC-SHA256 using the gateway device key */
+                "X-Signature": components["parameters"]["AiSignature"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiRelayRequest"];
+            };
+        };
+        responses: {
+            /** @description Sealed answer or an existing gateway claim to retry later */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRelayResponse"];
+                };
+            };
+            /** @description Malformed relay request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, stale, or invalid device signature */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Gateway is not in the asker's group */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown asker device */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request ID belongs to another device */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    recordAiReceipt: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Device-Id": components["parameters"]["AiDeviceId"];
+                /** @description Unix seconds within five minutes of the server clock */
+                "X-Timestamp": components["parameters"]["AiTimestamp"];
+                /** @description Hex HMAC-SHA256 using the gateway device key */
+                "X-Signature": components["parameters"]["AiSignature"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiReceiptRequest"];
+            };
+        };
+        responses: {
+            /** @description Receipt recorded idempotently */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiReceiptResponse"];
+                };
+            };
+            /** @description Missing, stale, or invalid device signature */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     sendText: {
         parameters: {
             query?: never;

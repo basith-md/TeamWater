@@ -4,8 +4,171 @@
 from __future__ import annotations
 
 from enum import Enum
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, confloat, conint
+from pydantic import BaseModel, ConfigDict, Field, RootModel, confloat, conint
+
+
+class AiStage(Enum):
+    waiting_for_gateway = 'waiting_for_gateway'
+    to_gateway = 'to_gateway'
+    ai_working = 'ai_working'
+    answer_arriving = 'answer_arriving'
+    answered = 'answered'
+    failed = 'failed'
+
+
+class AiOutcome(Enum):
+    ok = 'ok'
+    general = 'general'
+    blocked = 'blocked'
+    over_budget = 'over_budget'
+    no_grounding = 'no_grounding'
+    error = 'error'
+
+
+class AiStageChange(BaseModel):
+    stage: AiStage
+    at: float = Field(..., description='Unix seconds')
+
+
+class AiGuardrail(BaseModel):
+    flagged: bool
+    patterns: int
+    checker: str
+
+
+class AiSource(BaseModel):
+    source: str
+    excerpt: str
+
+
+class AiServerView(BaseModel):
+    model: str | None = None
+    kb_via: str | None = None
+    guardrail: AiGuardrail | None = None
+    sources: list[AiSource] | None = None
+
+
+class PrivacyLevel(Enum):
+    ok = 'ok'
+    unknown = 'unknown'
+    avoid = 'avoid'
+
+
+class AiModel(BaseModel):
+    index: int = Field(..., description='Append-only wire catalog index')
+    id: str
+    provider: str
+    label: str
+    price_in: float = Field(..., description='USD per million input tokens')
+    price_out: float = Field(..., description='USD per million output tokens')
+    context_k: int = Field(..., description='Context window in thousands of tokens')
+    tier: str
+    privacy: str
+    privacy_level: PrivacyLevel
+
+
+class AiAskRequest(BaseModel):
+    src: str
+    question: str = Field(
+        ...,
+        description='Nonempty after whitespace normalization, at most 400 UTF-8 bytes',
+    )
+    model_index: int | None = Field(
+        None,
+        description='Defaults to 0; unknown indexes fall back to the default model',
+    )
+
+
+class AiAskResponse(BaseModel):
+    request_id: UUID
+
+
+class AiGatewayRequest(BaseModel):
+    node_id: str | None = Field(None, description='Empty or omitted clears the gateway')
+
+
+class AiGatewayResponse(BaseModel):
+    internet_node: str | None = Field(...)
+
+
+class AiSetupRequest(BaseModel):
+    token: str
+
+
+class AiSetupResponse(BaseModel):
+    device_id: int
+    group_id: int
+    device_key: str = Field(..., description='Base64 device key; keep on the phone')
+    models: list[AiModel]
+    default_model: int
+
+
+class AiRelayRequest(BaseModel):
+    request_id: UUID
+    device_id: int = Field(..., description='Asker device ID')
+    sealed: str = Field(
+        ..., description='Base64 sealed model-index byte and UTF-8 question'
+    )
+
+
+class AiRelayMeta(BaseModel):
+    model: str | None = None
+    kb_via: str | None = None
+    guardrail: AiGuardrail | None = None
+    sources: list[AiSource] | None = None
+    outcome: AiOutcome | None = None
+    provider: str | None = None
+    verified: bool | None = None
+    verified_grounding: bool | None = None
+    secrets_flagged: bool | None = None
+    full_bytes: int | None = None
+    short_bytes: int | None = None
+    evaluation_id: str | None = None
+    note: str | None = None
+    gateway_device: int | None = None
+
+
+class State(Enum):
+    answered = 'answered'
+
+
+class AiRelayAnswered(BaseModel):
+    request_id: UUID
+    state: State
+    answer: str = Field(
+        ..., description="Base64 answer sealed with the asker's device key"
+    )
+    meta: AiRelayMeta
+
+
+class State1(Enum):
+    already_claimed = 'already_claimed'
+
+
+class AiRelayClaimed(BaseModel):
+    request_id: UUID
+    state: State1
+    by_you: bool
+    retry_after: int = Field(..., description='Seconds until the current claim expires')
+
+
+class AiRelayResponse(RootModel[AiRelayAnswered | AiRelayClaimed]):
+    root: AiRelayAnswered | AiRelayClaimed
+
+
+class AiReceiptRequest(BaseModel):
+    request_id: UUID
+
+
+class State2(Enum):
+    receipt_recorded = 'receipt_recorded'
+
+
+class AiReceiptResponse(BaseModel):
+    request_id: UUID
+    state: State2
 
 
 class NodeSummary(BaseModel):
@@ -173,6 +336,28 @@ class SendVideoResponse(BaseModel):
     metadata: MediaMetadata
 
 
+class AiRequest(BaseModel):
+    request_id: UUID
+    asker: str
+    gateway: str | None = Field(...)
+    question: str
+    model_index: int
+    model: str
+    stage: AiStage
+    stages: list[AiStageChange]
+    attempts: int
+    request_msg_ids: list[str]
+    answer_msg_ids: list[str]
+    answer: str | None = Field(...)
+    outcome: AiOutcome | None = Field(...)
+    sources: list[str]
+    receipt: bool
+    error: str
+    created_at: float = Field(..., description='Unix seconds')
+    note: str
+    server_view: AiServerView | None = None
+
+
 class Message(BaseModel):
     msg_id: str
     src: str
@@ -215,14 +400,6 @@ class Message(BaseModel):
     eta_basis: str | None = None
 
 
-class MeshState(BaseModel):
-    nodes: list[Node]
-    connections: dict[str, list[str]]
-    messages: dict[str, Message]
-    simulation: Simulation | None = None
-    events: list[PacketEvent] | None = None
-
-
 class SendTextResponse(BaseModel):
     msg_id: str
     original: int
@@ -245,3 +422,20 @@ class SendVoiceResponse(BaseModel):
     compressed: int
     chunks: int
     metadata: MediaMetadata
+
+
+class AiState(BaseModel):
+    internet_node: str | None = Field(...)
+    connected_nodes: list[str]
+    requests: list[AiRequest]
+
+
+class MeshState(BaseModel):
+    ai: AiState | None = Field(
+        None, description='AI gateway state; older mesh services omit this field'
+    )
+    nodes: list[Node]
+    connections: dict[str, list[str]]
+    messages: dict[str, Message]
+    simulation: Simulation | None = None
+    events: list[PacketEvent] | None = None

@@ -26,6 +26,42 @@ beforeEach(() => { vi.useFakeTimers(); Socket.instances = []; vi.stubGlobal('Web
 afterEach(() => { clients.forEach(c => c.dispose()); clients = []; vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('snapshot truth', () => {
+  it('clears AI conversation and gateway data when switching mode or endpoint', () => {
+    const c = client(); c.start();
+    const snapshot = { ...wire(), ai: { internet_node: 'node4', connected_nodes: ['node0'], requests: [] } };
+    Socket.instances.at(-1)!.receive(snapshot);
+    expect(c.getSnapshot().ai?.internetNode).toBe('node4');
+    c.setMode('replay');
+    expect(c.getSnapshot().ai).toBeNull();
+    c.setMode('live'); Socket.instances.at(-1)!.receive(snapshot);
+    c.setMode('live', '/different-service');
+    expect(c.getSnapshot().ai).toBeNull();
+  });
+
+  it('rejects an AI submission whose JSON body arrives after an endpoint change', async () => {
+    let finish!: (value: unknown) => void;
+    let reading = false;
+    vi.stubGlobal('fetch', async () => ({ ok: true, json: () => { reading = true; return new Promise(resolve => { finish = resolve; }); } }));
+    const c = client();
+    const pending = c.askAi!('node0', 'How fast is the mesh?');
+    await Promise.resolve(); expect(reading).toBe(true);
+    c.setMode('live', '/different-service'); finish({ request_id: 'stale-request' });
+    await expect(pending).rejects.toThrow(/Session changed/);
+  });
+
+  it('cancels a pending model catalog when switching services', async () => {
+    let finish!: (value: unknown) => void;
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal('fetch', async (_url: string, options: RequestInit) => {
+      signal = options?.signal as AbortSignal;
+      return { ok: true, json: () => new Promise(resolve => { finish = resolve; }) };
+    });
+    const c = client(); const pending = c.listModels!(); await Promise.resolve();
+    c.setMode('live', '/different-service'); finish([{ index: 0, id: 'old-model' }]);
+    await expect(pending).rejects.toThrow(/Session changed/);
+    expect(signal?.aborted).toBe(true);
+  });
+
   it('resets live conversation from the returned snapshot while preserving simulator configuration', async () => {
     const c = client(); c.start(); Socket.instances[0].receive(wire({ status: 'in_transit' }));
     const resetSnapshot = { ...legacySnapshot, messages: {}, events: [], simulation: {

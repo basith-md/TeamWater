@@ -18,7 +18,7 @@ export function initialState(mode: MeshState['mode'], endpoint: string, scenario
   const fixtureNodes = mode === 'replay' ? nodes.map(n => ({ ...n, online: scenario !== 'outage' || n.id !== 'node2' })) : [];
   return {
     mode, endpoint, scenario, connection: mode === 'replay' ? 'connected' : 'disconnected',
-    nodes: fixtureNodes,
+    nodes: fixtureNodes, ai: null,
     links: mode === 'replay' ? links.filter(e => fixtureNodes.find(n => n.id === e.from)?.online && fixtureNodes.find(n => n.id === e.to)?.online) : [],
     messages: {}, events: [], config: { bitRate: mode === 'replay' ? 5000 : null, lossRate: mode === 'replay' ? scenario === 'lossy' ? 0.2 : 0 : null, rangeMeters: mode === 'replay' ? 180 : null, playbackSpeed },
     capabilities: { packetEvents: mode === 'replay', controls: mode === 'replay', verifiedContent: mode === 'replay' }, error: null,

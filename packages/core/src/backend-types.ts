@@ -12,6 +12,16 @@ export type BackendVoiceResponse = operations['sendVoice']['responses'][200]['co
 export type BackendImageResponse = operations['sendImage']['responses'][200]['content']['application/json'];
 export type BackendSimulation = components['schemas']['Simulation'];
 export type BackendPacketEvent = components['schemas']['PacketEvent'];
+export type BackendAiState = components['schemas']['AiState'];
+export type BackendAiRequest = components['schemas']['AiRequest'];
+export type BackendAiStage = components['schemas']['AiStage'];
+export type BackendAiOutcome = components['schemas']['AiOutcome'];
+export type BackendAiModel = components['schemas']['AiModel'];
+export type BackendAiAskRequest = operations['askAi']['requestBody']['content']['multipart/form-data'];
+export type BackendAiAskResponse = operations['askAi']['responses'][200]['content']['application/json'];
+export type BackendAiGatewayRequest = NonNullable<operations['setAiGateway']['requestBody']>['content']['multipart/form-data'];
+export type BackendAiGatewayResponse = operations['setAiGateway']['responses'][200]['content']['application/json'];
+export type BackendAiModelsResponse = operations['listAiModels']['responses'][200]['content']['application/json'];
 /** Legacy services return only these fields; all additional response fields are optional there. */
 export type LegacySendResponse = Pick<BackendTextResponse, 'msg_id' | 'chunks'>;
 

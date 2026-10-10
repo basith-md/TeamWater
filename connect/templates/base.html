@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}Water Connect{% endblock %}</title>
+<link rel="stylesheet" href="{{ base }}/static/connect.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="{{ base }}/" aria-label="Water Connect home">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></svg>
+    <span>Water<span class="dot">.</span></span><span class="brand-tag">CONNECT</span>
+  </a>
+  {% if user %}
+  <nav aria-label="Main">
+    <a href="{{ base }}/" class="{{ 'active' if active == 'groups' }}">Groups</a>
+    <a href="{{ base }}/models" class="{{ 'active' if active == 'models' }}">Models</a>
+    <a href="{{ base }}/trust" class="{{ 'active' if active == 'trust' }}">Trust log</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="who">{{ user.email }}</span>
+    <form method="post" action="{{ base }}/logout"><button class="link-button">Log out</button></form>
+  </div>
+  {% else %}
+  <div class="topbar-right">
+    <a href="{{ base }}/login" class="link-button" style="text-decoration:none">Log in</a>
+  </div>
+  {% endif %}
+</header>
+<main class="{% block main_class %}{% endblock %}">
+{% block body %}{% endblock %}
+</main>
+<footer>
+  <span>WATER CONNECT · OPTIONAL ONLINE SETUP FOR THE WATER MESH</span>
+  <span>MESSAGES NEVER PASS THROUGH THIS SERVER · ONLY AI QUESTIONS DO</span>
+</footer>
+<script>
+document.querySelectorAll('[data-copy]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var el = document.getElementById(b.dataset.copy);
+    el.select();
+    (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).catch(function () { document.execCommand('copy'); });
+    var label = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = label; }, 1500);
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+{% extends "base.html" %}{% block main_class %}narrow{% endblock %}{% block body %}
+<div class="consent">
+  <div class="eyebrow">Connect a phone</div>
+  <h1>Turn on Water AI for this phone?</h1>
+  <div class="phone-chip">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg>
+    <div><strong>{{ device_name }}</strong><div class="small muted">Signed in as {{ user.email }}</div></div>
+  </div>
+
+  {% if not groups %}
+  <p class="notice">You need a group first. <a href="{{ base }}/">Create one</a>, then come back here from Water.</p>
+  {% else %}
+  <form method="post" action="{{ base }}/connect">
+    <input type="hidden" name="return" value="{{ back }}">
+    <input type="hidden" name="device_name" value="{{ device_name }}">
+    <label for="group">Group</label>
+    <select id="group" name="group_id">
+      {% for g in groups %}<option value="{{ g.id }}" {{ 'selected' if g.id == selected }}>{{ g.name }}</option>{% endfor %}
+    </select>
+
+    <div class="panel" style="margin-top:18px">
+      <h3>This phone will be able to</h3>
+      <ul>
+        <li>Ask questions over the mesh, answered using the field guide{% if not require_grounding %} or the model's general knowledge{% endif %}</li>
+        <li>Relay other group members' sealed questions when it has internet</li>
+      </ul>
+      <p class="small muted">Water Connect and the selected model provider process AI questions. Your group's members can see questions and answers in the trust log.{% if prism_on %} PRISM also receives questions and answers for tracing and evaluation.{% endif %}</p>
+      <h3 style="margin-top:14px">It will not</h3>
+      <ul>
+        <li>Send your mesh messages here, because they never leave the radio</li>
+        <li>Hold any model API key, because keys stay on this server</li>
+        <li>Be able to read questions it relays for others</li>
+      </ul>
+    </div>
+    <button class="btn block">Connect phone</button>
+    <a class="btn ghost block" href="{{ base }}/" style="margin-top:8px">Cancel</a>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

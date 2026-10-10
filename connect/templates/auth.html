@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% block main_class %}narrow{% endblock %}{% block body %}
+<div class="eyebrow">{{ 'Step 1 of 4' if mode == 'signup' else 'Welcome back' }}</div>
+<h1>{{ 'Create your account' if mode == 'signup' else 'Log in' }}</h1>
+<p class="muted">{{ 'You will create a group, invite people, and connect phones next.' if mode == 'signup' else 'Manage your groups, phones and AI settings.' }}</p>
+<div class="panel">
+  <form method="post">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="email" required autofocus>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" minlength="8" autocomplete="{{ 'new-password' if mode == 'signup' else 'current-password' }}" placeholder="{{ 'At least 8 characters' if mode == 'signup' else '' }}" required>
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    <button class="btn block">{{ 'Create account' if mode == 'signup' else 'Log in' }}</button>
+  </form>
+</div>
+{% if demo and mode == 'login' %}
+<form method="post" action="{{ base }}/demo-login" style="margin-top:12px">
+  <input type="hidden" name="next" value="{{ next }}">
+  <button class="btn ghost block" style="margin-top:0">Use the shared {{ demo.group }} demo account</button>
+</form>
+{% endif %}
+<p class="small muted" style="margin-top:16px">
+  {% if mode == 'signup' %}Already have an account? <a href="{{ base }}/login?next={{ next|urlencode }}">Log in</a>{% else %}New to Water? <a href="{{ base }}/signup?next={{ next|urlencode }}">Create an account</a>{% endif %}
+</p>
+<p class="small muted">AI questions are sent to a third-party model provider that you choose. Mesh messages never reach this server.</p>
+{% endblock %}

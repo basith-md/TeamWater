@@ -38,6 +38,24 @@ export interface MeshState {
   scenario: Scenario; error: string | null;
   eventHistoryComplete?: boolean;
   routing?: { distanceAware: boolean; links: LinkMetric[] };
+  /** Water AI gateway state from the live service; null when the service has no AI support. */
+  ai?: AiState | null;
+}
+export type AiStage = BackendAiStage;
+export type AiOutcome = BackendAiOutcome;
+/** UI names and millisecond timestamps adapted from the generated wire contract. */
+export interface AiRequest extends Pick<BackendAiRequest,
+  'asker' | 'gateway' | 'question' | 'model' | 'stage' | 'stages' | 'attempts' |
+  'answer' | 'outcome' | 'sources' | 'receipt' | 'error' | 'note'> {
+  id: BackendAiRequest['request_id']; modelIndex: BackendAiRequest['model_index'];
+  requestMessageIds: BackendAiRequest['request_msg_ids']; answerMessageIds: BackendAiRequest['answer_msg_ids'];
+  createdAt: BackendAiRequest['created_at'];
+}
+export interface AiState {
+  internetNode: BackendAiState['internet_node']; connectedNodes: BackendAiState['connected_nodes']; requests: AiRequest[];
+}
+export interface AiModel extends Pick<BackendAiModel, 'index' | 'id' | 'provider' | 'label' | 'tier' | 'privacy'> {
+  privacyLevel: BackendAiModel['privacy_level'];
 }
 export interface MediaAsset { uri: string; name: string; type: string; file?: Blob }
 export interface MeshClient {
@@ -54,10 +72,16 @@ export interface MeshClient {
   moveNode?(nodeId: string, x: number, y: number): Promise<void>;
   sendText(src: string, dst: string, text: string): Promise<string>;
   sendMedia(src: string, dst: string, kind: 'image' | 'voice', asset: MediaAsset): Promise<string>;
+  /** Ask Water AI from a phone; the sealed question crosses the mesh to the internet node. Live mode only. */
+  askAi?(src: string, question: string, modelIndex?: number): Promise<string>;
+  /** Choose which node has internet (null: none). Live mode only. */
+  setInternetNode?(node: string | null): Promise<void>;
+  /** The model catalog served by Water Connect. */
+  listModels?(): Promise<AiModel[]>;
 }
 export interface Telemetry {
   transmittedBytes: number | null; receivedBytes: number | null; droppedPackets: number | null;
   retries: number | null; latencyMs: number | null; observedLossRate: number | null;
   bitRate: number | null; rangeMeters: number | null; lossRate: number | null;
 }
-import type { BackendMessage, BackendMessageStatus } from './backend-types';
+import type { BackendAiModel, BackendAiOutcome, BackendAiRequest, BackendAiStage, BackendAiState, BackendMessage, BackendMessageStatus } from './backend-types';

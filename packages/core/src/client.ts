@@ -1,8 +1,8 @@
-import type { MediaAsset, MeshClient, MeshMessage, MeshState, Mode, Scenario } from './types';
+import type { AiModel, MediaAsset, MeshClient, MeshMessage, MeshState, Mode, Scenario } from './types';
 import { authorTrace, initialState } from './replay';
 import { normalizeSnapshot } from './snapshot';
 import { mergeEvents } from './events';
-import type { BackendImageResponse, BackendMediaRequest, BackendTextRequest, LegacySendResponse } from './backend-types';
+import type { BackendAiAskRequest, BackendAiAskResponse, BackendAiGatewayRequest, BackendImageResponse, BackendMediaRequest, BackendTextRequest, LegacySendResponse } from './backend-types';
 
 function urls(endpoint: string) {
   const base = endpoint.trim().replace(/\/+$/, '').replace(/\/ws$/, '');
@@ -107,7 +107,7 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
       if (path && message.kind !== 'text') message.mediaUrl = `${urls(state.endpoint).http}${path}`;
     }
     lastSequence = newest; lastSimulationTime = snapshot.simulationTime;
-    emit({ nodes: snapshot.nodes, links: snapshot.links, messages, events: merged.slice(-2000), eventHistoryComplete: complete,
+    emit({ nodes: snapshot.nodes, links: snapshot.links, messages, ai: snapshot.ai, events: merged.slice(-2000), eventHistoryComplete: complete,
       config: { ...state.config, bitRate: snapshot.bitRate, lossRate: snapshot.lossRate, rangeMeters: snapshot.rangeMeters, playbackSpeed: snapshot.playbackSpeed },
       capabilities: { packetEvents: snapshot.packetEvents, controls: false, verifiedContent: snapshot.packetEvents || Object.values(messages).some(m => m.receiverStatus !== undefined) },
       routing: { distanceAware: snapshot.distanceRouting, links: snapshot.linkMetrics },
@@ -156,6 +156,28 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
     } catch (error) {
       const issue = disposed || session !== generation || contentSession !== contentGeneration ? new Error('Session changed; send cancelled.') : timedOut ? new Error('Send timed out. Try again.') : error instanceof Error ? error : new Error('Send failed. Try again.');
       if (!disposed && session === generation && contentSession === contentGeneration) emit({ error: issue.message }); throw issue;
+    } finally { clearTimeout(deadline); timers.delete(deadline); requests.delete(controller); }
+  }
+  async function requestJson(path: string, fields?: Record<string, string | number>): Promise<unknown> {
+    ensureActive();
+    const session = generation; const contentSession = contentGeneration;
+    const controller = new AbortController(); requests.add(controller);
+    let timedOut = false;
+    const deadline = setTimeout(() => { timedOut = true; controller.abort(); }, 15000); timers.add(deadline);
+    const active = () => !disposed && session === generation && contentSession === contentGeneration;
+    try {
+      const form = fields ? new FormData() : undefined;
+      if (fields) for (const [k, v] of Object.entries(fields)) form!.append(k, String(v));
+      const response = await fetch(`${urls(state.endpoint).http}${path}`, { method: fields ? 'POST' : 'GET', body: form, signal: controller.signal });
+      if (!active()) throw new Error('Session changed; request cancelled.');
+      const body: unknown = await response.json().catch(() => null);
+      if (!active()) throw new Error('Session changed; request cancelled.');
+      if (!response.ok) throw new Error(body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string' ? body.detail : `Request failed (${response.status}).`);
+      return body;
+    } catch (error) {
+      if (!active()) throw new Error('Session changed; request cancelled.');
+      if (timedOut) throw new Error('Request timed out. Try again.');
+      throw error;
     } finally { clearTimeout(deadline); timers.delete(deadline); requests.delete(controller); }
   }
   function replay(src: string, dst: string, kind: MeshMessage['kind'], text?: string): string {
@@ -241,6 +263,28 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
       else if (asset.uri) form.append('file', { uri: asset.uri, name: asset.name, type: asset.type } as unknown as Blob);
       else throw new Error('Choose a media file first.');
       return post(`/send/${kind}`, form);
+    },
+    askAi: async (src, question, modelIndex = 0) => {
+      ensureActive(); if (!question.trim()) throw new Error('Ask a question first.');
+      if (state.mode !== 'live') throw new Error('Water AI needs Live mode: it runs through the real mesh simulation.');
+      const request = { src, question: question.trim(), model_index: modelIndex } satisfies BackendAiAskRequest;
+      const result = await requestJson('/ai/ask', request);
+      if (!result || typeof result !== 'object' || !('request_id' in result) || typeof result.request_id !== 'string') throw new Error('Invalid AI response.');
+      const response = { request_id: result.request_id } satisfies BackendAiAskResponse;
+      return response.request_id;
+    },
+    setInternetNode: async node => {
+      ensureActive(); if (state.mode !== 'live') throw new Error('Choosing an internet node needs Live mode.');
+      const request = { node_id: node ?? '' } satisfies BackendAiGatewayRequest;
+      await requestJson('/ai/gateway', request);
+    },
+    listModels: async () => {
+      const list = await requestJson('/connect/v1/models');
+      if (!Array.isArray(list)) throw new Error('Invalid model list.');
+      return list.filter(m => m && Number.isInteger(m.index) && m.index >= 0 && m.index <= 255 && typeof m.id === 'string').map((m): AiModel => ({
+        index: m.index, id: m.id, provider: String(m.provider ?? ''), label: String(m.label ?? m.id), tier: String(m.tier ?? ''),
+        privacy: String(m.privacy ?? ''), privacyLevel: m.privacy_level === 'avoid' || m.privacy_level === 'ok' ? m.privacy_level : 'unknown',
+      }));
     },
   };
   return client;

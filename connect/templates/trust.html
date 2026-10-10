@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% block body %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Every AI request, checked</div>
+    <h1>Trust log</h1>
+    <p class="lede">What was asked, which checks ran, what the answer was grounded in, and whether it reached the phone.</p>
+  </div>
+  <span class="badge {{ 'ok' if prism_on else 'warn' }}"><i></i>{{ 'PRISM tracing on' if prism_on else 'PRISM off: local checks only' }}</span>
+</div>
+{% if items %}
+<div class="panel flush">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Request</th><th>Question</th><th>Outcome</th><th>Answer and sources</th><th>Checks</th><th>Delivered</th></tr></thead>
+      <tbody>
+        {% for i in items %}
+        <tr>
+          <td><span class="mono">{{ i.id }}</span><span class="sub">{{ i.when }}</span><span class="sub">{{ i.model }}</span></td>
+          <td class="answer">{{ i.question or '—' }}</td>
+          <td><span class="badge {{ i.badge }}"><i></i>{{ i.label }}</span></td>
+          <td class="answer">
+            {% if i.full %}<span>{{ i.full }}</span>{% else %}<span class="muted">No model answer</span>{% endif %}
+            {% for s in i.sources %}<span class="source">↳ {{ s.source }}: "{{ s.excerpt }}…"</span>{% endfor %}
+            {% if i.outcome == 'ok' %}<span class="source">AI answer. Not verified by a person.</span>{% elif i.outcome == 'general' %}<span class="source">Not in the field guide: the model answered from its own knowledge. May be wrong.</span>{% endif %}
+          </td>
+          <td>
+            <span class="sub">Injection: <b>{{ 'flagged' if i.flagged else 'clear' }}</b></span>
+            <span class="sub">Grounding: {{ i.kb_via }}</span>
+            {% if i.secrets %}<span class="sub"><b>Secret redacted</b></span>{% endif %}
+          </td>
+          <td>{% if i.receipt %}<span class="badge ok"><i></i>Receipt</span>{% elif i.status == 'answered' %}<span class="badge warn"><i></i>Not confirmed</span>{% else %}<span class="badge"><i></i>{{ i.status }}</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="panel"><p class="empty">No AI requests yet. Once a phone asks something over the mesh, it shows up here with its checks and sources.</p></div>
+{% endif %}
+{% endblock %}
