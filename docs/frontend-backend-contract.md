@@ -20,9 +20,9 @@ The client subscribes to the initial and subsequent WebSocket snapshots. Message
 
 Main reports aggregate chunk progress. Its `delivered` status only confirms ACKs, so the UI says **ACK received** and leaves integrity unverified. `route` is the latest reported path and may be a returning ACK route. It is never expanded into invented packet events. The service's preview is explicitly unverified, and unavailable packet metrics stay unknown.
 
-## Experimental packet/media branch
+## Published packet/media contract (OpenAPI 1.1)
 
-The adapter also understands `origin/packet-media-pipeline` without modifying that branch. These fields are experimental extensions until the backend team adds them to the canonical schema:
+The adapter consumes the backend team’s published OpenAPI 1.1 contract from `origin/packet-media-pipeline` commit `554957a`. The schema and generator were synchronized and the shared types regenerated without hand edits. Backend implementation files remain owned by the backend team. The published fields include:
 
 - Message `receiver_status`, `awaiting_receipt` / `receipt_unconfirmed` statuses, metadata, radio-byte/retry/loss counters, and a verified `content_url`.
 - Snapshot `simulation` configuration and sequenced `events` with per-hop transmit, receive, drop, no-route and terminal receipt records.
@@ -32,7 +32,7 @@ Receiver verification and sender receipt are separate states. A recipient can di
 
 Verified text fetches retry up to three times with bounded backoff and a 15-second deadline per attempt, even if no new snapshot arrives. Exhausted requests expose a recovery message; restarting live mode retries them. Mode/endpoint changes invalidate old work, and success for one message preserves another message's content error.
 
-Event sequence IDs deduplicate rolling snapshots into a bounded 2,000-event history. Sequence/clock regression resets the local history. RX/drop bytes are inferred only from an unambiguous preceding transmission on that link; otherwise they remain unknown. A truncated or incomplete history makes event-derived loss/received-byte totals unavailable. Backend cumulative counters remain usable.
+Event sequence IDs deduplicate rolling snapshots into a bounded 2,000-event history. Sequence/clock regression resets the local history. RX/drop bytes are inferred only from an unambiguous preceding transmission on that link; otherwise they remain unknown. A truncated or incomplete history makes event-derived received-byte totals unavailable. The current contract supplies per-message `frames_sent` and `lost_packets`, so packet loss does not depend on complete event history. For older snapshots without `frames_sent`, the captured positive TX byte sizes must sum exactly to the per-message `radio_bytes` counter before a rate is shown. Missing or mismatched transmissions leave that fallback unavailable. Backend cumulative counters remain usable.
 
 ## Measurement definitions and remaining backend work
 
@@ -40,14 +40,14 @@ Event sequence IDs deduplicate rolling snapshots into a bounded 2,000-event hist
 |---|---|
 | Bandwidth | Configured `simulation.bit_rate`; not measured useful throughput |
 | Radio bytes | Backend `radio_bytes`, including forwarding, ACKs and retries |
-| Packet loss | Dropped / transmitted events only with complete history; configured loss is separate |
+| Packet loss | `lost_packets / frames_sent`; older branch fallback requires complete TX history proven by `radio_bytes` |
 | Retries / dropped packets | Backend cumulative per-message counters |
 | Packet ledger time | `simulation_time`, labeled **Sim time**; this branch models channel occupancy |
-| Delay | Unknown: cumulative channel airtime is not end-to-end message latency |
-| Range | Unknown: no published radio range field |
+| Delay | `receiver_verified_at`: simulation-scaled seconds from submission to destination verification; excludes the returning receipt |
+| Range | Configured `simulation.range_meters`, not a measured device distance |
 
-For complete live controls and metrics, publish the branch extensions in OpenAPI, a session ID plus snapshot sequence/watermark, explicit packet IDs/serialized byte sizes on RX/drop, end-to-end timestamps through the return receipt, radio range, and supported control capabilities. Live replay controls remain disabled until their backend interface is defined.
+The published API includes radio configuration, node status, and reset operations. The current console does not expose those mutations; sample replay controls appear only in sample mode. A session ID plus snapshot watermark and explicit packet IDs/byte sizes on RX/drop would improve complete trace accounting. The ledger’s channel-occupancy clock is distinct from the delay card’s receiver-verification duration.
 
 ## Frontend replay
 
-**Demo replay** is an explicitly labeled frontend fixture session. Clean, lossy and relay-outage presets replay authored traces, including ACK and terminal receipt traffic. It is not a mesh simulator and its numbers are not backend measurements. The same normalized types and phone UI render replay and live state. Two independent native clients must use live mode to communicate through the same Python process.
+**Sample replay** is an explicitly labeled frontend fixture session. Clean, lossy and relay-outage presets replay authored traces, including ACK and terminal receipt traffic. It is not a mesh simulator and its numbers are not backend measurements. The same normalized types and phone UI render replay and live state. Two independent native clients must use live mode to communicate through the same Python process.

@@ -1,11 +1,17 @@
-import React from 'react';
-import { Text } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, Text } from 'react-native';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MediaAsset, MeshClient, MeshMessage, MeshState, Mode } from '@teamwater/core';
 import { PhoneChat } from './index';
 
-afterEach(cleanup);
+const platformMetrics = vi.hoisted(() => ({ fontScale: 1 }));
+vi.mock('react-native', async importOriginal => {
+  const actual = await importOriginal<typeof import('react-native')>();
+  return { ...actual, useWindowDimensions: () => ({ ...actual.useWindowDimensions(), fontScale: platformMetrics.fontScale }) };
+});
+
+afterEach(() => { cleanup(); platformMetrics.fontScale = 1; });
 
 function message(overrides: Partial<MeshMessage> = {}): MeshMessage {
   return { id: 'm1', src: 'node0', dst: 'node4', kind: 'text', preview: 'Fix the code', text: 'Fix the code', totalChunks: 4, received: 4, acked: 4, status: 'delivered', route: ['node0', 'node4'], createdAt: 1000, etaSeconds: null, integrity: 'unverified', receiptConfirmed: false, ...overrides };
@@ -24,6 +30,118 @@ class FakeClient implements MeshClient {
 }
 
 describe('PhoneChat', () => {
+  it.each([
+    { role: 'boss' as const, name: 'Malcome', title: 'User 2', initial: 'M', contact: 'Basith', src: 'node0', dst: 'node4', ownPlace: 'Deep playa · Mayan Warrior', contactPlace: 'Playa airport' },
+    { role: 'employee' as const, name: 'Basith', title: 'User 1', initial: 'B', contact: 'Malcome', src: 'node4', dst: 'node0', ownPlace: 'Playa airport', contactPlace: 'Deep playa · Mayan Warrior' },
+  ])('shows the playa identity and routes $name messages to $contact', async ({ role, name, title, initial, contact, src, dst, ownPlace, contactPlace }) => {
+    const client = new FakeClient();
+    client.publish([message({ src: dst, dst: src, status: 'sending', received: 0 })]);
+    render(<PhoneChat client={client} role={role} conversation="playa"/>);
+    expect(screen.getByText(name)).toBeTruthy();
+    expect(screen.getByText(`/ ${title}`)).toBeTruthy();
+    expect(screen.getByText(initial)).toBeTruthy();
+    expect(screen.getByText(`${name} → ${contact}`)).toBeTruthy();
+    expect(screen.getByText(ownPlace)).toBeTruthy();
+    expect(screen.getByText(contactPlace)).toBeTruthy();
+    expect(screen.getByText(`${contact.toUpperCase()} · ${dst.toUpperCase()}`)).toBeTruthy();
+    expect(screen.getByText('Receiving…')).toBeTruthy();
+    expect(screen.queryAllByText(/Jordan|Team lead|Engineer|San Francisco/)).toHaveLength(0);
+    const composer = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+    expect(composer.placeholder).toBe(`Message ${contact}…`);
+    fireEvent.change(composer, { target: { value: `Meet me, ${contact}` } });
+    fireEvent.click(screen.getByLabelText('Send message'));
+    await waitFor(() => expect(composer.value).toBe(''));
+    expect(client.state.messages.sent).toMatchObject({ src, dst, text: `Meet me, ${contact}` });
+    expect(screen.getByText('Sending')).toBeTruthy();
+  });
+
+  it('keeps the playa direction clear while composing in compact mode', () => {
+    render(<PhoneChat client={new FakeClient()} role="boss" conversation="playa" compact/>);
+    expect(screen.getByText('Malcome → Basith')).toBeTruthy();
+    expect(screen.getByText('LIVE · Connected')).toBeTruthy();
+    expect((screen.getByLabelText('Message input') as HTMLTextAreaElement).placeholder).toBe('Message Basith…');
+  });
+
+  it('prefills the playa invitation once without overwriting later typing', () => {
+    const client = new FakeClient();
+    const view = render(<PhoneChat client={client} role="boss" conversation="playa" initialDraft="Join us at Mayan Warrior!"/>);
+    const composer = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+    expect(composer.value).toBe('Join us at Mayan Warrior!');
+    fireEvent.change(composer, { target: { value: 'My edited invitation' } });
+    view.rerender(<PhoneChat client={client} role="boss" conversation="playa" initialDraft="Replacement invitation" compact/>);
+    act(() => client.publish([message({ src: 'node4', dst: 'node0', text: 'On my way' })]));
+    expect(screen.getByLabelText('Message input')).toBe(composer);
+    expect(composer.value).toBe('My edited invitation');
+  });
+
+  it('uses a playa conversation starter without introducing the work personas', () => {
+    render(<PhoneChat client={new FakeClient()} role="boss" conversation="playa"/>);
+    expect(screen.queryAllByText(/Jordan|code|San Francisco/)).toHaveLength(0);
+    fireEvent.click(screen.getByLabelText('Use conversation starter'));
+    expect((screen.getByLabelText('Message input') as HTMLTextAreaElement).value).toMatch(/Basith.*Mayan Warrior/);
+  });
+
+  it('compacts optional identity chrome while keeping the conversation and composer available', () => {
+    const client = new FakeClient();
+    client.publish([message({ text: 'The newest message from Alex' }), message({ id: 'reply', src: 'node4', dst: 'node0', text: 'Jordan’s reply' })]);
+    render(<PhoneChat client={client} role="employee" compact/>);
+    expect(screen.queryByText('Burning Man · Black Rock City')).toBeNull();
+    expect(screen.queryByText('San Francisco, CA')).toBeNull();
+    expect(screen.queryByText('OFF THE GRID. STILL IN SYNC.')).toBeNull();
+    expect(screen.queryByText('STORE · FORWARD')).toBeNull();
+    expect(screen.getByText('Alex')).toBeTruthy();
+    expect(screen.getByText('The newest message from Alex')).toBeTruthy();
+    expect(screen.getByText('Jordan’s reply')).toBeTruthy();
+    expect(screen.getByLabelText('Message input')).toBeTruthy();
+    expect(screen.getByLabelText('Send message')).toBeTruthy();
+    expect(screen.getByLabelText('Attach image')).toBeTruthy();
+  });
+
+  it('reports composer focus so the native shell can make space for the keyboard', () => {
+    const events: boolean[] = [];
+    render(<PhoneChat client={new FakeClient()} role="employee" onComposerFocusChange={focused => events.push(focused)}/>);
+    fireEvent.focus(screen.getByLabelText('Message input'));
+    fireEvent.blur(screen.getByLabelText('Message input'));
+    expect(events).toEqual([true, false]);
+  });
+
+  it('preserves the input draft and active recorder while compact mode changes', () => {
+    function RecorderChoice() {
+      const [started, setStarted] = useState(false);
+      return <Pressable accessibilityRole="button" accessibilityLabel="Start test recorder" onPress={() => setStarted(true)}><Text>{started ? 'Recording choice active' : 'Recorder idle'}</Text></Pressable>;
+    }
+    const client = new FakeClient();
+    const recorder = () => <RecorderChoice/>;
+    const view = render(<PhoneChat client={client} role="employee" renderVoiceRecorder={recorder}/>);
+    fireEvent.change(screen.getByLabelText('Message input'), { target: { value: 'Do not lose this draft' } });
+    const input = screen.getByLabelText('Message input');
+    fireEvent.click(screen.getByLabelText('Start test recorder'));
+    view.rerender(<PhoneChat client={client} role="employee" compact renderVoiceRecorder={recorder}/>);
+    expect(screen.getByLabelText('Message input')).toBe(input);
+    expect((input as HTMLTextAreaElement).value).toBe('Do not lose this draft');
+    expect(screen.getByText('Recording choice active')).toBeTruthy();
+    view.rerender(<PhoneChat client={client} role="employee" renderVoiceRecorder={recorder}/>);
+    expect(screen.getByText('Recording choice active')).toBeTruthy();
+    expect(screen.getByText('Burning Man · Black Rock City')).toBeTruthy();
+  });
+
+  it('allows the composer to fit two lines at large native font scaling', () => {
+    platformMetrics.fontScale = 3;
+    render(<PhoneChat client={new FakeClient()} role="employee" compact/>);
+    const input = screen.getByLabelText('Message input');
+    const style = window.getComputedStyle(input);
+    expect(parseFloat(style.minHeight)).toBeGreaterThanOrEqual(136);
+    expect(parseFloat(style.maxHeight)).toBeGreaterThanOrEqual(parseFloat(style.minHeight));
+  });
+
+  it('retains the full desktop identity layout when compact mode is not requested', () => {
+    render(<PhoneChat client={new FakeClient()} role="employee" embedded/>);
+    fireEvent.focus(screen.getByLabelText('Message input'));
+    expect(screen.getByText('Burning Man · Black Rock City')).toBeTruthy();
+    expect(screen.getByText('San Francisco, CA')).toBeTruthy();
+    expect(screen.getByText('OFF THE GRID. STILL IN SYNC.')).toBeTruthy();
+  });
+
   it('shows both directions for the role and hides unrelated messages', () => {
     const client = new FakeClient();
     client.publish([message(), message({ id: 'reply', src: 'node4', dst: 'node0', text: 'I am at Burning Man', preview: 'I am at Burning Man' }), message({ id: 'other', src: 'node2', dst: 'node3', text: 'Private relay message', preview: 'Private relay message' })]);
@@ -53,6 +171,7 @@ describe('PhoneChat', () => {
     await screen.findByText('Relay unavailable');
     expect((screen.getByLabelText('Message input') as HTMLInputElement).value).toBe('Try this patch');
     client.failure = null;
+    await waitFor(() => expect(screen.getByLabelText('Send message').getAttribute('aria-disabled')).not.toBe('true'));
     fireEvent.click(screen.getByLabelText('Send message'));
     await waitFor(() => expect((screen.getByLabelText('Message input') as HTMLInputElement).value).toBe(''));
     expect(screen.queryByText('Relay unavailable')).toBeNull();
@@ -177,5 +296,59 @@ describe('PhoneChat', () => {
     client.publish([message({ id: 'unknown', text: 'Unknown timestamp', createdAt: null }), message({ id: 'known', text: 'Known timestamp', createdAt: 1000 })]);
     render(<PhoneChat client={client} role="boss" />);
     expect(screen.getAllByText(/^(Known|Unknown) timestamp$/).map(element => element.textContent)).toEqual(['Known timestamp', 'Unknown timestamp']);
+  });
+
+  it('sends a recorded voice asset from employee to boss through the shared transport', async () => {
+    const client = new FakeClient();
+    render(<PhoneChat client={client} role="employee" renderVoiceRecorder={({ onSend, disabled }) => <Pressable accessibilityRole="button" accessibilityLabel="Send recorded voice" disabled={disabled} onPress={() => { void onSend({ uri: 'file:///recording.m4a', name: 'recording.m4a', type: 'audio/mp4' }).catch(() => {}); }}><Text>Send recorded voice</Text></Pressable>}/>);
+    fireEvent.click(screen.getByLabelText('Send recorded voice'));
+    await screen.findByText('recording.m4a');
+    expect(client.state.messages.media.kind).toBe('voice');
+    expect(client.state.messages.media.src).toBe('node4');
+    expect(client.state.messages.media.dst).toBe('node0');
+  });
+
+  it('offers recording only in live mode and remounts recorder state after endpoint changes', () => {
+    function RecorderChoice() {
+      const [started, setStarted] = useState(false);
+      return <Pressable accessibilityRole="button" accessibilityLabel="Start test recorder" onPress={() => setStarted(true)}><Text>{started ? 'Recording choice active' : 'Recorder idle'}</Text></Pressable>;
+    }
+    const client = new FakeClient(); client.setMode('replay');
+    render(<PhoneChat client={client} role="boss" renderVoiceRecorder={() => <RecorderChoice/>}/>);
+    expect(screen.queryByText('Recorder idle')).toBeNull();
+    expect(screen.getByLabelText('Voice recording requires Live mode')).toBeTruthy();
+    act(() => client.setMode('live'));
+    fireEvent.click(screen.getByLabelText('Start test recorder'));
+    expect(screen.getByText('Recording choice active')).toBeTruthy();
+    act(() => client.setMode('live', 'http://another-host:8000'));
+    expect(screen.getByText('Recorder idle')).toBeTruthy();
+  });
+
+  it('distinguishes incoming Receiving from outgoing Sending on both phones', () => {
+    const client = new FakeClient();
+    client.publish([message({ status: 'sending', received: 0 }), message({ id: 'reply', src: 'node4', dst: 'node0', text: 'Reply coming', status: 'in_transit', received: 2 })]);
+    const view = render(<PhoneChat client={client} role="boss"/>);
+    expect(screen.getByText('Sending')).toBeTruthy();
+    expect(screen.getByText('Receiving…')).toBeTruthy();
+    view.rerender(<PhoneChat client={client} role="employee"/>);
+    expect(screen.getByText('In transit')).toBeTruthy();
+    expect(screen.getByText('Receiving…')).toBeTruthy();
+    expect(screen.queryByText('Sending')).toBeNull();
+  });
+
+  it('describes completed unverified recipient content and transfer failures honestly', () => {
+    const client = new FakeClient(); client.publish([message()]);
+    render(<PhoneChat client={client} role="employee"/>);
+    expect(screen.getByText('Received · unverified')).toBeTruthy();
+    expect(screen.queryByText('Delivered')).toBeNull();
+    act(() => client.publish([message({ status: 'failed', received: 2 })]));
+    expect(screen.getByText('Transfer failed')).toBeTruthy();
+  });
+
+  it('describes an incoming cancelled transfer without implying it is still receiving', () => {
+    const client = new FakeClient(); client.publish([message({ status: 'cancelled', received: 2 })]);
+    render(<PhoneChat client={client} role="employee"/>);
+    expect(screen.getByText('Transfer cancelled')).toBeTruthy();
+    expect(screen.queryByText('Receiving…')).toBeNull();
   });
 });

@@ -15,7 +15,7 @@ User authorized parallel agents, TDD, mobile and console implementation. Continu
 
 Tasks 1–4 complete. See the worker reports for observed failing tests followed by passing implementations.
 
-## Final verification — October 10, 2026
+## Initial frontend verification — October 10, 2026
 
 - `TEAMWATER_LIVE_URL=http://127.0.0.1:8000 TEAMWATER_PIPELINE_URL=http://127.0.0.1:8001 npm test`: **79 passed**, 11 files, no skips. Includes two independent clients against main's service, and actual verified full text, events, and counters against the unmodified packet/media branch.
 - `npm run typecheck`: passed.
@@ -34,4 +34,17 @@ An independent read-only review identified a stale E2E expectation and a verifie
 
 Console: `http://localhost:5173`, currently proxying the packet/media branch preview at port 8001. Main's legacy service is at port 8000. Expo Metro is on port 8081. The packet/media preview was extracted to ignored `.superpowers/backend-preview`; no backend, service, OpenAPI, or generated shared files were changed. The committed main branch was not merged with the experimental backend branch.
 
-The frontend is on `feat/expo-mesh-console`. See `FRONTEND.md` for reproducible startup and the backend handoff document for remaining telemetry fields. Voice recording, Expo publication, and more legible playback of rapid packet events are being added in follow-up commits.
+The frontend is on `feat/expo-mesh-console`. See `FRONTEND.md` for reproducible startup and the backend handoff document for remaining telemetry fields. The voice, trace and shared-contract follow-up is described below.
+
+## Voice, trace and OpenAPI 1.1 follow-up
+
+- Microphone recording in browser and Expo: five-second limit, preview/send/discard, failure retry, background/session/permission-race cleanup. Incoming messages say Receiving, including honest failed/cancelled states.
+- Live simulation defaults in the console; sample replay is explicitly separate. The map reads Simulated Mesh Network, uses Alex/Jordan identities, and plays queued observed transmissions with independent delivery status.
+- Synced the backend team's OpenAPI 1.1 and generator from `packet-media-pipeline` commit `554957a`; regenerated shared Python and TypeScript using pinned generators. Both generated outputs match that published commit. No backend implementation changes were made.
+- Fresh full verification: **128 tests passed**, 15 files, including legacy service, newest pipeline text/metrics, and genuine five-second Opus encode/transfer/decode/receipt. Typecheck passed.
+- **6 headed Chrome E2E tests passed**, including actual SVG packet movement and browser microphone capture (synthetic device) → backend → verified playable recipient audio. This does not establish physical device microphone or speaker behavior.
+- Console production build passed. Expo iOS, Android and web exports passed; the published EAS update performs a fresh native bundle export.
+- Independent review found cancellation, permission-dialog and stale-timer edges; each was corrected with regression tests. No remaining material review findings.
+- EAS update published for iOS and Android from `1648c05`: group `ae210d34-d674-44c1-a662-26777c353814`, runtime `exposdk:57.0.0`; fetched manifest verified. EAS project: `ravejedii/teamwater`, SDK 57, preview environment with phone-reachable HTTPS backend. Current backend is the unmodified latest teammate preview on port 8001 through a temporary tunnel; the Mac/service/tunnel must remain running.
+
+A newly requested Jordan Code workspace and sponsor integration are a subsequent task; they are not included in the above verification counts.

@@ -13,3 +13,5 @@ playwright-report/
 .superpowers/
 .worktrees/
 .DS_Store
+.cloudflare/
+.dev.vars*

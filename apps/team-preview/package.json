@@ -1,0 +1,13 @@
+{
+  "name": "@teamwater/team-preview",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "cd ../mobile && EXPO_PUBLIC_TEAM_PREVIEW=true EXPO_PUBLIC_BACKEND_URL='' expo export --platform web --clear && cd ../team-preview && vite build",
+    "deploy": "cf deploy --prebuilt --mode production"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.sha-91c870c02",
+    "cf": "1.0.0-beta.14"
+  }
+}

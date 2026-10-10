@@ -175,6 +175,30 @@ describe('authored replay traces', () => {
 });
 
 describe('packet/media teammate branch boundary', () => {
+  it('consumes published 1.1 counters, range and receiver verification time without a complete trace', () => {
+    const published = { ...legacySnapshot, simulation: { loss_rate: 0.2, bit_rate: 1070, seed: 7, playback_speed: 100, simulation_time: 8, model: 'shared channel', fec: true, window_size: 4, range_meters: 250, queue_depth: 0 }, messages: { m1: { ...legacySnapshot.messages.m1, receiver_status: 'verified', status: 'receipt_unconfirmed', frames_sent: 10, lost_packets: 2, radio_bytes: 840, receiver_verified_at: 1.25 } }, events: [packet(200, 'packet_tx', { frame_bytes: 120 })] } satisfies components['schemas']['MeshState'];
+    const c = client(); c.start(); Socket.instances[0].receive({ type: 'state', ...published });
+    expect(c.getSnapshot().eventHistoryComplete).toBe(false);
+    expect(core.deriveTelemetry(c.getSnapshot(), 'm1')).toMatchObject({ observedLossRate: 0.2, rangeMeters: 250, latencyMs: 1250 });
+  });
+  it('never uses elapsed transfer time as verification latency and rejects invalid published counters', () => {
+    const c = client(); c.start(); const ws = Socket.instances[0];
+    ws.receive(pipeline({ receiver_status: 'partial', content_url: null, frames_sent: 10, lost_packets: 2, elapsed_seconds: 8, receiver_verified_at: 1.25 }));
+    expect(core.deriveTelemetry(c.getSnapshot(), 'm1').latencyMs).toBeNull();
+    ws.receive({ ...pipeline({ frames_sent: 1.5, receiver_verified_at: -1, elapsed_seconds: 8 }), simulation: { range_meters: -1 } });
+    expect(core.deriveTelemetry(c.getSnapshot(), 'm1')).toMatchObject({ observedLossRate: null, rangeMeters: null, latencyMs: null });
+    ws.receive(pipeline({ frames_sent: 1, lost_packets: 2, content_url: null }));
+    expect(core.deriveTelemetry(c.getSnapshot(), 'm1').observedLossRate).toBeNull();
+  });
+  it('retains a cancelled published message without claiming it is in transit', () => {
+    const c = client(); c.start(); Socket.instances[0].receive(pipeline({ status: 'cancelled', receiver_status: 'partial', content_url: null }));
+    expect(c.getSnapshot().messages.m1?.status).toBe('cancelled');
+    expect(core.deliveryLabel(c.getSnapshot().messages.m1)).toBe('Cancelled');
+  });
+  it('retains published media kinds alongside supported text, image and voice messages', () => {
+    const c = client(); c.start(); Socket.instances[0].receive(pipeline({ media_type: 'video', content_url: null }));
+    expect(c.getSnapshot().messages.m1?.kind).toBe('video');
+  });
   it('requires receiver verification and terminal delivered state for Delivered', () => {
     const c = client(); c.start(); const ws = Socket.instances[0];
     ws.receive(pipeline({ status: 'awaiting_receipt', content_url: null }));
@@ -189,6 +213,30 @@ describe('packet/media teammate branch boundary', () => {
   it('uses measured message counters and simulation config without inventing latency or range', () => {
     const c = client(); c.start(); Socket.instances[0].receive(pipeline({ content_url: null }, [packet(50, 'packet_tx', { frame_bytes: 230 })]));
     expect(core.deriveTelemetry(c.getSnapshot(), 'm1')).toEqual({ transmittedBytes: 840, receivedBytes: null, droppedPackets: 2, retries: 3, latencyMs: null, observedLossRate: null, bitRate: 1070, rangeMeters: null, lossRate: 0.2 });
+  });
+  it('reports measured selected-message loss after a late join when captured TX bytes prove its complete transmission history', () => {
+    const c = client(); c.start(); const ws = Socket.instances[0];
+    ws.receive(pipeline({ content_url: null, radio_bytes: 0, lost_packets: 0 }, [packet(100, 'packet_tx', { msg_id: 'older', frame_bytes: 64 })]));
+    ws.receive(pipeline({ content_url: null, radio_bytes: 294, lost_packets: 1 }, [packet(101, 'packet_tx', { frame_bytes: 230 }), packet(102, 'packet_dropped'), packet(103, 'packet_tx', { frame_bytes: 64 }), packet(104, 'packet_rx')]));
+    expect(c.getSnapshot().eventHistoryComplete).toBe(false);
+    expect(core.deriveTelemetry(c.getSnapshot(), 'm1').observedLossRate).toBe(0.5);
+    expect(core.deriveTelemetry(c.getSnapshot(), 'm1').latencyMs).toBeNull();
+    expect(core.deriveTelemetry(c.getSnapshot(), 'm1').rangeMeters).toBeNull();
+  });
+  it.each([
+    [packet(50, 'packet_tx', { frame_bytes: 230 })],
+    [packet(50, 'packet_tx', { frame_bytes: 230 }), packet(51, 'packet_tx')],
+    [packet(50, 'packet_tx', { frame_bytes: 230 }), packet(51, 'packet_tx', { frame_bytes: 63 })],
+  ])('keeps selected-message loss unavailable when transmission bytes cannot prove completeness %#', (...events) => {
+    const c = client(); c.start(); Socket.instances[0].receive(pipeline({ content_url: null, radio_bytes: 294, lost_packets: 1 }, events));
+    expect(core.deriveTelemetry(c.getSnapshot(), 'm1').observedLossRate).toBeNull();
+  });
+  it('loses selected-message completeness after its transmission events leave the bounded ring', () => {
+    const c = client(); c.start(); const ws = Socket.instances[0];
+    ws.receive(pipeline({ content_url: null, radio_bytes: 294, lost_packets: 1 }, [packet(1, 'packet_tx', { frame_bytes: 230 }), packet(2, 'packet_dropped'), packet(3, 'packet_tx', { frame_bytes: 64 }), packet(4, 'packet_rx')]));
+    expect(core.deriveTelemetry(c.getSnapshot(), 'm1').observedLossRate).toBe(0.5);
+    for (let batch = 0; batch < 21; batch++) ws.receive(pipeline({ content_url: null, radio_bytes: 294, lost_packets: 1 }, Array.from({ length: 100 }, (_, i) => packet(batch * 100 + i + 5, 'packet_tx', { msg_id: 'newer', frame_bytes: 64 }))));
+    expect(core.deriveTelemetry(c.getSnapshot(), 'm1').observedLossRate).toBeNull();
   });
   it('deduplicates rolling events across snapshots and correlates receive byte sizes only with an observed transmission', () => {
     const c = client(); c.start(); const ws = Socket.instances[0];

@@ -2,7 +2,7 @@ import type { MediaAsset, MeshClient, MeshMessage, MeshState, Mode, Scenario } f
 import { authorTrace, initialState } from './replay';
 import { normalizeSnapshot } from './snapshot';
 import { mergeEvents } from './events';
-import type { BackendMediaRequest, BackendTextRequest } from './backend-types';
+import type { BackendImageResponse, BackendMediaRequest, BackendTextRequest, LegacySendResponse } from './backend-types';
 
 function urls(endpoint: string) {
   const base = endpoint.trim().replace(/\/+$/, '').replace(/\/ws$/, '');
@@ -106,7 +106,7 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
     }
     lastSequence = newest; lastSimulationTime = snapshot.simulationTime;
     emit({ nodes: snapshot.nodes, links: snapshot.links, messages, events: merged.slice(-2000), eventHistoryComplete: complete,
-      config: { ...state.config, bitRate: snapshot.bitRate, lossRate: snapshot.lossRate, rangeMeters: null },
+      config: { ...state.config, bitRate: snapshot.bitRate, lossRate: snapshot.lossRate, rangeMeters: snapshot.rangeMeters },
       capabilities: { packetEvents: snapshot.packetEvents, controls: false, verifiedContent: snapshot.packetEvents || Object.values(messages).some(m => m.receiverStatus !== undefined) },
       connection: 'connected', error: contentError(messages) });
     for (const [id, path] of Object.entries(snapshot.contentPaths)) if (messages[id].kind === 'text' && messages[id].text === undefined) void loadText(id, path);
@@ -143,12 +143,10 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
       const result: unknown = await response.json();
       if (disposed || session !== generation || contentSession !== contentGeneration) throw new Error('Session changed; send cancelled.');
       if (!result || typeof result !== 'object' || !('msg_id' in result) || typeof result.msg_id !== 'string' || !('chunks' in result) || typeof result.chunks !== 'number' || !Number.isInteger(result.chunks) || result.chunks < 1) throw new Error('Invalid send response.');
-      // The UI only needs the canonical identifier and chunk count. The backend may
-      // include required compression metadata that this transport client does not use.
-      const canonical = { msg_id: result.msg_id, chunks: result.chunks };
+      const canonical = { msg_id: result.msg_id, chunks: result.chunks } satisfies LegacySendResponse;
       if (path === '/send/image') {
         if (!('original' in result) || typeof result.original !== 'number' || !Number.isFinite(result.original) || result.original < 0 || !('compressed' in result) || typeof result.compressed !== 'number' || !Number.isFinite(result.compressed) || result.compressed < 0) throw new Error('Invalid send response.');
-        const image = { ...canonical, original: result.original, compressed: result.compressed };
+        const image = { ...canonical, original: result.original, compressed: result.compressed } satisfies Pick<BackendImageResponse, 'msg_id' | 'chunks' | 'original' | 'compressed'>;
         emit({ error: contentError() }); return image.msg_id;
       }
       emit({ error: contentError() }); return canonical.msg_id;
