@@ -9,9 +9,9 @@ import io
 from typing import Set
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from PIL import Image
 
 import sys
@@ -21,6 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
 from mesh_backend import MeshBackend
+from media import encode_text, encode_image, encode_voice, render_media, MAX_UPLOAD
 
 app = FastAPI(title="CHRP Mesh Service")
 backend = MeshBackend()
@@ -71,39 +72,65 @@ async def websocket_endpoint(websocket: WebSocket):
         connected_clients.discard(websocket)
 
 
+async def submit_media(src, dst, media, preview):
+    try:
+        msg_id = await backend.send_message(src, dst, media.data,
+            media.metadata["media_type"], preview, metadata=media.metadata)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"msg_id": msg_id, "original": media.metadata["original_bytes"],
+            "compressed": len(media.data), "chunks": backend.messages[msg_id].total_chunks,
+            "metadata": media.metadata}
+
+
 @app.post("/send/text")
 async def send_text(src: str = Form(...), dst: str = Form(...), text: str = Form(...)):
-    data = text.encode("utf-8")
-    preview = text[:60]
-    msg_id = await backend.send_message(src, dst, data, "text", preview)
-    return {"msg_id": msg_id, "chunks": len(backend._chunk_data(data))}
+    try:
+        media = encode_text(text)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return await submit_media(src, dst, media, text[:60])
+
+
+async def read_and_encode(file, encoder):
+    raw = await file.read(MAX_UPLOAD + 1)
+    if len(raw) > MAX_UPLOAD:
+        raise HTTPException(413, "Upload exceeds 10 MiB")
+    try:
+        return await asyncio.to_thread(encoder, raw)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.post("/send/image")
 async def send_image(src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)):
-    raw = await file.read()
-    img = Image.open(io.BytesIO(raw)).convert("RGB")
-    img.thumbnail((96, 96))
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=25, optimize=True)
-    compressed = buf.getvalue()
-    preview = f"Image {img.size[0]}x{img.size[1]} ({len(compressed)}B)"
-    msg_id = await backend.send_message(src, dst, compressed, "image", preview)
-    return {
-        "msg_id": msg_id,
-        "original": len(raw),
-        "compressed": len(compressed),
-        "chunks": len(backend._chunk_data(compressed)),
-    }
+    media = await read_and_encode(file, encode_image)
+    return await submit_media(src, dst, media, f"Image {media.metadata['width']}x{media.metadata['height']}")
 
 
 @app.post("/send/voice")
 async def send_voice(src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)):
-    raw = await file.read()
-    compressed = raw[:1200]  # placeholder aggressive compression
-    preview = f"Voice note ({len(compressed)}B compressed)"
-    msg_id = await backend.send_message(src, dst, compressed, "voice", preview)
-    return {"msg_id": msg_id, "chunks": len(backend._chunk_data(compressed))}
+    media = await read_and_encode(file, encode_voice)
+    return await submit_media(src, dst, media, "Opus voice (first 5 seconds maximum)")
+
+
+@app.get("/messages/{msg_id}/content")
+async def received_content(msg_id: str):
+    if msg_id not in backend.messages:
+        raise HTTPException(404, "Unknown message")
+    media = backend.received_media.get(msg_id)
+    if media is None:
+        raise HTTPException(409, "Receiver has not verified complete content")
+    return Response(render_media(media), media_type=media.metadata["mime"],
+                    headers={"X-Content-Type-Options": "nosniff"})
+
+
+@app.post("/nodes/{node_id}/status")
+async def node_status(node_id: str, online: bool = Form(...)):
+    if node_id not in backend.nodes:
+        raise HTTPException(404, "Unknown node")
+    backend.set_node_online(node_id, online)
+    return {"node_id": node_id, "online": online}
 
 
 @app.get("/nodes")

@@ -85,3 +85,6 @@ python service.py
 Open http://localhost:8000
 
 The service automatically finds the backend in the sibling `backend/` directory.
+## Packet/media implementation
+
+See [packet/media handoff](docs/PACKET_MEDIA_HANDOFF.md) for the implemented protocol, codec requirements, test commands, current limits and AI gateway integration plan. The backend is now Python rather than the original PRD's proposed TypeScript architecture. Voice is encoded with FFmpeg/libopus; it is no longer a truncated upload. Run from the repository root with `python -m uvicorn service.service:app --host 127.0.0.1 --port 8000`.

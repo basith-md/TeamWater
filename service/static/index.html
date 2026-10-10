@@ -10,13 +10,17 @@
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
     background: #000;
     color: #fff;
-    height: 100vh;
+    min-height: 100vh;
+    flex-direction: column;
+    padding: 20px 0;
+    gap: 12px;
     display: flex;
     justify-content: center;
     align-items: center;
   }
   .iphone {
-    width: 390px;
+    width: min(390px, 100vw);
+    flex-shrink: 0;
     height: 844px;
     background: #1c1c1e;
     border-radius: 48px;
@@ -52,7 +56,7 @@
     flex-direction: column;
   }
   .map-container {
-    flex: 1.2;
+    flex: 0 0 230px;
     background: #111;
     position: relative;
     overflow: hidden;
@@ -112,6 +116,8 @@
   .status-delivered { color: #34C759; }
   .status-transit { color: #FF9500; }
   .status-sending { color: #8e8e93; }
+  .received-link { display: block; color: #77baff; margin: 8px 0; }
+  audio { width: 100%; }
   .controls {
     padding: 12px;
     background: #1c1c1e;
@@ -145,6 +151,7 @@
 </style>
 </head>
 <body>
+<div style="padding:8px;text-align:center">Simulation: 1.07 kbps · 20% loss per hop · 10× playback · Voice: first 5 seconds</div>
 <div class="iphone">
   <div class="notch"></div>
   <div class="status-bar">
@@ -250,35 +257,64 @@ function draw() {
   });
 }
 
+function escapeHtml(value) {
+  const el = document.createElement('span');
+  el.textContent = String(value);
+  return el.innerHTML;
+}
 function updateMessages() {
-  messagesEl.innerHTML = '';
   const list = Object.values(messages).sort((a,b) => b.created_at - a.created_at || 0);
   if (list.length === 0) {
     messagesEl.innerHTML = '<div style="text-align:center;color:#8e8e93;padding:20px">No messages yet.<br>Send across the mesh.</div>';
     return;
   }
+  if (!messagesEl.querySelector('.msg-card')) messagesEl.innerHTML = '';
   list.forEach(m => {
-    const card = document.createElement('div');
-    card.className = 'msg-card';
+    let card = document.getElementById('msg-' + m.msg_id);
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'msg-' + m.msg_id;
+      card.className = 'msg-card';
+      card.innerHTML = '<div class="msg-info"></div><div class="msg-stats"></div>';
+      messagesEl.prepend(card);
+    }
     const statusClass = m.status === 'delivered' ? 'status-delivered' : 
                         m.status === 'reassembled' ? 'status-transit' : 'status-sending';
     const honest = m.status !== 'delivered' ? '<span class="honest-badge">NOT DELIVERED</span>' : '';
-    card.innerHTML = `
+    card.querySelector('.msg-info').innerHTML = `
       <div class="msg-header">
         <span>${m.src} → ${m.dst}</span>
         <span class="${statusClass}">${m.status.toUpperCase()}${honest}</span>
       </div>
-      <div>${m.media_type}: ${m.preview || ''}</div>
+      <div>${escapeHtml(m.media_type)}: ${escapeHtml(m.preview || '')}</div>
       <div class="progress-bar"><div class="progress-fill" style="width:${Math.round(m.progress*100)}%"></div></div>
       <div style="font-size:12px;color:#8e8e93">
-        ${m.acked}/${m.total_chunks} chunks • Route: ${m.route.join(' → ') || '...'} • ETA: ${m.eta}s
+        ${m.acked}/${m.total_chunks} chunks • Route: ${m.route.join(' → ') || '...'} • Estimated network time left: ${m.eta == null ? "unknown" : m.eta + "s"}
       </div>
     `;
-    messagesEl.appendChild(card);
+    const stats = card.querySelector('.msg-stats');
+    stats.textContent = `Receiver: ${m.receiver_status} · ${m.received}/${m.total_chunks} received · ${m.radio_bytes} radio bytes · ${m.retries} retries · ${m.lost_packets} drops`;
+
+    if (m.content_url && !card.querySelector('.received-link')) {
+      const link = document.createElement('a');
+      link.className = 'received-link';
+      link.href = m.content_url;
+      link.textContent = 'Open verified received content';
+      link.target = '_blank';
+      card.appendChild(link);
+    }
+    if (m.content_url && ['voice', 'image'].includes(m.media_type) && !card.querySelector('audio, img')) {
+      const content = document.createElement(m.media_type === 'voice' ? 'audio' : 'img');
+      content.src = m.content_url;
+      if (m.media_type === 'voice') content.controls = true;
+      else { content.alt = 'Verified received image'; content.style.maxWidth = '160px'; }
+      card.appendChild(content);
+    }
+
   });
 }
 
-const ws = new WebSocket(`ws://${location.host}/ws`);
+const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
 ws.onmessage = (ev) => {
   const data = JSON.parse(ev.data);
   if (data.type === 'state') {
@@ -293,11 +329,20 @@ ws.onmessage = (ev) => {
     if (src.options.length <= 1) {
       src.innerHTML = nodes.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
       dst.innerHTML = nodes.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
-      if (nodes.length > 1) dst.selectedIndex = 1;
+      if (nodes.length > 1) dst.selectedIndex = nodes.length - 1;
     }
   }
 };
 
+async function sendForm(url, options) {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    const error = await response.json();
+    alert(error.detail || 'Send failed');
+    throw new Error(error.detail || 'Send failed');
+  }
+  return response.json();
+}
 async function sendText() {
   const src = document.getElementById('src').value;
   const dst = document.getElementById('dst').value;
@@ -307,7 +352,7 @@ async function sendText() {
   form.append('src', src);
   form.append('dst', dst);
   form.append('text', text);
-  await fetch('/send/text', { method: 'POST', body: form });
+  await sendForm('/send/text', { method: 'POST', body: form });
   document.getElementById('text').value = '';
 }
 
@@ -320,7 +365,7 @@ document.getElementById('image').onchange = async (e) => {
   form.append('src', src);
   form.append('dst', dst);
   form.append('file', file);
-  await fetch('/send/image', { method: 'POST', body: form });
+  await sendForm('/send/image', { method: 'POST', body: form });
 };
 
 document.getElementById('voice').onchange = async (e) => {
@@ -332,7 +377,7 @@ document.getElementById('voice').onchange = async (e) => {
   form.append('src', src);
   form.append('dst', dst);
   form.append('file', file);
-  await fetch('/send/voice', { method: 'POST', body: form });
+  await sendForm('/send/voice', { method: 'POST', body: form });
 };
 
 // Auto refresh state occasionally
