@@ -42,7 +42,7 @@ from media import (
 from shared.python.models import SimulationConfig
 
 app = FastAPI(title="CHRP Mesh Service")
-backend = MeshBackend(playback_speed=float(os.environ.get("TEAMWATER_PLAYBACK_SPEED", "2")))
+backend = MeshBackend(playback_speed=float(os.environ.get("TEAMWATER_PLAYBACK_SPEED", "2")), diverse_routes=True)
 
 # Track connected WebSocket clients
 connected_clients: Set[WebSocket] = set()

@@ -111,6 +111,7 @@ class MeshBackend:
         radio_range=180,
         drop_predicate=None,
         use_fec=True,
+        diverse_routes=False,
         link_retries=LINK_RETRIES,
     ):
         if (
@@ -128,8 +129,10 @@ class MeshBackend:
         self.playback_speed, self.max_attempts = playback_speed, max_attempts
         self.radio_range, self.seed = radio_range, seed
         self.rng = random.Random(seed)
+        self._route_rng = random.Random(seed)
         self.drop_predicate = drop_predicate
         self.use_fec = use_fec
+        self.diverse_routes = diverse_routes
         self.nodes = {}
         self.connections = defaultdict(set)
         self.messages = {}
@@ -183,6 +186,7 @@ class MeshBackend:
             if key == "seed":
                 self.seed = value
                 self.rng = random.Random(value)
+                self._route_rng = random.Random(value)
             else:
                 setattr(self, key, value)
         self._update_connections()
@@ -210,6 +214,48 @@ class MeshBackend:
                     queue.append(path + [neighbor])
         return []
 
+    def _path_valid(self, path):
+        return bool(path) and all(self.nodes[n].online for n in path) and all(
+            b in self.connections[a] for a, b in zip(path, path[1:])
+        )
+
+    def _candidate_routes(self, source, destination):
+        shortest = self._route(source, destination)
+        if not shortest:
+            return []
+        limit = min(len(shortest) - 1 + 1, MAX_HOPS)
+        found = []
+
+        def walk(path):
+            if path[-1] == destination:
+                found.append(path)
+                return
+            if len(path) - 1 >= limit:
+                return
+            for nxt in sorted(self.connections[path[-1]]):
+                if nxt not in path and self.nodes[nxt].online:
+                    walk(path + [nxt])
+
+        walk([source])
+        return found
+
+    def _pick_route(self, msg, source, destination):
+        """Pin one randomly chosen route per message; reroute only if it breaks."""
+        if not self.diverse_routes:
+            return self._route(source, destination)
+        forward = getattr(msg, "pinned_route", None)
+        if not self._path_valid(forward):
+            options = self._candidate_routes(msg.src, msg.dst)
+            forward = self._route_rng.choice(options) if options else None
+            msg.pinned_route = forward
+        if not forward:
+            return []
+        if (source, destination) == (forward[0], forward[-1]):
+            return forward
+        if (source, destination) == (forward[-1], forward[0]):
+            return forward[::-1]
+        return self._route(source, destination)
+
     def _event(self, event_type, msg, **fields):
         self._sequence += 1
         self.events.append(
@@ -229,7 +275,7 @@ class MeshBackend:
 
     async def _transmit(self, frame, msg):
         source, destination = f"node{frame.source}", f"node{frame.destination}"
-        path = self._route(source, destination)
+        path = self._pick_route(msg, source, destination)
         msg.route_available = bool(path)
         if not path:
             self._event("no_route", msg, source=source, destination=destination)
