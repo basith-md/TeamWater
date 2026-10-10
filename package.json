@@ -1,0 +1,21 @@
+{
+  "name": "teamwater", "version": "0.1.0", "private": true, "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "npm run dev --workspace @teamwater/console",
+    "mobile": "npm run start --workspace @teamwater/mobile",
+    "mobile:web": "npm run web --workspace @teamwater/mobile",
+    "test": "vitest run", "test:watch": "vitest",
+    "typecheck": "tsc --noEmit", "build": "npm run build --workspace @teamwater/console",
+    "test:e2e": "playwright test",
+    "test:live": "TEAMWATER_LIVE_URL=http://127.0.0.1:8000 vitest run tests/integration/live-backend.test.ts",
+    "test:pipeline": "vitest run tests/integration/pipeline-backend.test.ts"
+  },
+  "dependencies": {"react": "19.2.3", "react-dom": "19.2.3"},
+  "devDependencies": {
+    "typescript": "~5.9.3", "vitest": "^5.0.3", "vite": "^8.3.4",
+    "@vitejs/plugin-react": "^6.0.1", "@types/react": "~19.2.2", "@types/react-dom": "~19.2.2",
+    "@types/node": "^22.19.0", "@testing-library/react": "^16.3.3", "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/user-event": "^14.6.1", "jsdom": "^27.0.1", "@playwright/test": "^1.64.0"
+  }
+}
