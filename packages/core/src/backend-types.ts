@@ -11,5 +11,8 @@ export type BackendTextResponse = operations['sendText']['responses'][200]['cont
 export type BackendVoiceResponse = operations['sendVoice']['responses'][200]['content']['application/json'];
 export type BackendImageResponse = operations['sendImage']['responses'][200]['content']['application/json'];
 
-/** Packet/media branch extensions are experimental until the canonical OpenAPI publishes them. */
-export type ExperimentalMessageStatus = 'awaiting_receipt' | 'receipt_unconfirmed';
+/**
+ * `reassembled` is retained only for the authored replay and older backend snapshots.
+ * The current API reports `awaiting_receipt` before a terminal receipt instead.
+ */
+export type ExperimentalMessageStatus = 'awaiting_receipt' | 'receipt_unconfirmed' | 'reassembled';

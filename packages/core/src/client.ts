@@ -2,7 +2,7 @@ import type { MediaAsset, MeshClient, MeshMessage, MeshState, Mode, Scenario } f
 import { authorTrace, initialState } from './replay';
 import { normalizeSnapshot } from './snapshot';
 import { mergeEvents } from './events';
-import type { BackendImageResponse, BackendMediaRequest, BackendTextRequest, BackendTextResponse, BackendVoiceResponse } from './backend-types';
+import type { BackendMediaRequest, BackendTextRequest } from './backend-types';
 
 function urls(endpoint: string) {
   const base = endpoint.trim().replace(/\/+$/, '').replace(/\/ws$/, '');
@@ -143,10 +143,12 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
       const result: unknown = await response.json();
       if (disposed || session !== generation || contentSession !== contentGeneration) throw new Error('Session changed; send cancelled.');
       if (!result || typeof result !== 'object' || !('msg_id' in result) || typeof result.msg_id !== 'string' || !('chunks' in result) || typeof result.chunks !== 'number' || !Number.isInteger(result.chunks) || result.chunks < 1) throw new Error('Invalid send response.');
-      const canonical = { msg_id: result.msg_id, chunks: result.chunks } satisfies BackendTextResponse | BackendVoiceResponse;
+      // The UI only needs the canonical identifier and chunk count. The backend may
+      // include required compression metadata that this transport client does not use.
+      const canonical = { msg_id: result.msg_id, chunks: result.chunks };
       if (path === '/send/image') {
         if (!('original' in result) || typeof result.original !== 'number' || !Number.isFinite(result.original) || result.original < 0 || !('compressed' in result) || typeof result.compressed !== 'number' || !Number.isFinite(result.compressed) || result.compressed < 0) throw new Error('Invalid send response.');
-        const image = { ...canonical, original: result.original, compressed: result.compressed } satisfies BackendImageResponse;
+        const image = { ...canonical, original: result.original, compressed: result.compressed };
         emit({ error: contentError() }); return image.msg_id;
       }
       emit({ error: contentError() }); return canonical.msg_id;
