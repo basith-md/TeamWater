@@ -1,0 +1,243 @@
+openapi: 3.0.3
+info:
+  title: CHRP Mesh Service
+  description: |
+    API for the CHRP off-grid mesh simulator.
+    
+    **IMPORTANT**: This is the single source of truth for shared types.
+    Do NOT edit the generated Python or TypeScript files.
+    Modify only this OpenAPI spec, then regenerate.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+paths:
+  /send/text:
+    post:
+      operationId: sendText
+      summary: Send a text message across the mesh
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [src, dst, text]
+              properties:
+                src:
+                  type: string
+                  description: Source node ID
+                dst:
+                  type: string
+                  description: Destination node ID
+                text:
+                  type: string
+                  description: Message text
+      responses:
+        "200":
+          description: Message accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendTextResponse"
+
+  /send/image:
+    post:
+      operationId: sendImage
+      summary: Send a compressed image across the mesh
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [src, dst, file]
+              properties:
+                src:
+                  type: string
+                dst:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Image accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendImageResponse"
+
+  /send/voice:
+    post:
+      operationId: sendVoice
+      summary: Send a compressed voice note across the mesh
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [src, dst, file]
+              properties:
+                src:
+                  type: string
+                dst:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Voice note accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendVoiceResponse"
+
+  /nodes:
+    get:
+      operationId: getNodes
+      summary: List all nodes
+      responses:
+        "200":
+          description: Node list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NodeSummary"
+
+  /state:
+    get:
+      operationId: getState
+      summary: Get full mesh state (polling alternative to WebSocket)
+      responses:
+        "200":
+          description: Current mesh state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeshState"
+
+components:
+  schemas:
+    NodeSummary:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+
+    Node:
+      type: object
+      required: [id, name, x, y, color]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        x:
+          type: number
+          format: float
+        y:
+          type: number
+          format: float
+        color:
+          type: string
+
+    MessageStatus:
+      type: string
+      enum: [sending, in_transit, reassembled, delivered, failed]
+
+    Message:
+      type: object
+      required: [msg_id, src, dst, total_chunks, received, acked, status, route, eta, media_type, preview, progress]
+      properties:
+        msg_id:
+          type: string
+        src:
+          type: string
+        dst:
+          type: string
+        total_chunks:
+          type: integer
+        received:
+          type: integer
+        acked:
+          type: integer
+        status:
+          $ref: "#/components/schemas/MessageStatus"
+        route:
+          type: array
+          items:
+            type: string
+        eta:
+          type: number
+          format: float
+        media_type:
+          type: string
+          enum: [text, image, voice]
+        preview:
+          type: string
+        progress:
+          type: number
+          format: float
+        created_at:
+          type: number
+          format: float
+
+    MeshState:
+      type: object
+      required: [nodes, connections, messages]
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Node"
+        connections:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        messages:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/Message"
+
+    SendTextResponse:
+      type: object
+      required: [msg_id, chunks]
+      properties:
+        msg_id:
+          type: string
+        chunks:
+          type: integer
+
+    SendImageResponse:
+      type: object
+      required: [msg_id, original, compressed, chunks]
+      properties:
+        msg_id:
+          type: string
+        original:
+          type: integer
+        compressed:
+          type: integer
+        chunks:
+          type: integer
+
+    SendVoiceResponse:
+      type: object
+      required: [msg_id, chunks]
+      properties:
+        msg_id:
+          type: string
+        chunks:
+          type: integer
