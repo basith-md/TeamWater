@@ -5,25 +5,43 @@ Other services can also import MeshBackend directly and skip this layer.
 """
 
 import asyncio
-import io
 from typing import Set
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
+from fastapi import (
+    FastAPI,
+    WebSocket,
+    WebSocketDisconnect,
+    UploadFile,
+    File,
+    Form,
+    HTTPException,
+)
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
-from PIL import Image
+from fastapi.responses import HTMLResponse, Response
 
 import sys
 from pathlib import Path
 
+# Allow imports both from repo root and direct service.py execution
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # Allow importing the backend from the sibling directory
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
 from mesh_backend import MeshBackend
+from media import (
+    encode_text,
+    encode_image,
+    encode_voice,
+    encode_video,
+    render_media,
+    MAX_UPLOAD,
+)
+
+from shared.python.models import SimulationConfig
 
 app = FastAPI(title="CHRP Mesh Service")
-backend = MeshBackend()
+backend = MeshBackend(playback_speed=100)
 
 # Track connected WebSocket clients
 connected_clients: Set[WebSocket] = set()
@@ -43,9 +61,19 @@ async def broadcast_state():
     connected_clients.difference_update(dead)
 
 
+_broadcast_task = None
+
+
+async def delayed_broadcast():
+    await asyncio.sleep(0.04)
+    await broadcast_state()
+
+
 def on_backend_change():
-    """Callback registered with the backend so we push updates immediately."""
-    asyncio.create_task(broadcast_state())
+    """Coalesce per-hop events instead of starting overlapping WebSocket writes."""
+    global _broadcast_task
+    if _broadcast_task is None or _broadcast_task.done():
+        _broadcast_task = asyncio.create_task(delayed_broadcast())
 
 
 # Register the callback so the backend notifies us of changes
@@ -71,39 +99,135 @@ async def websocket_endpoint(websocket: WebSocket):
         connected_clients.discard(websocket)
 
 
-@app.post("/send/text")
-async def send_text(src: str = Form(...), dst: str = Form(...), text: str = Form(...)):
-    data = text.encode("utf-8")
-    preview = text[:60]
-    msg_id = await backend.send_message(src, dst, data, "text", preview)
-    return {"msg_id": msg_id, "chunks": len(backend._chunk_data(data))}
-
-
-@app.post("/send/image")
-async def send_image(src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)):
-    raw = await file.read()
-    img = Image.open(io.BytesIO(raw)).convert("RGB")
-    img.thumbnail((96, 96))
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=25, optimize=True)
-    compressed = buf.getvalue()
-    preview = f"Image {img.size[0]}x{img.size[1]} ({len(compressed)}B)"
-    msg_id = await backend.send_message(src, dst, compressed, "image", preview)
+async def submit_media(src, dst, media, preview):
+    try:
+        msg_id = await backend.send_message(
+            src,
+            dst,
+            media.data,
+            media.metadata["media_type"],
+            preview,
+            metadata=media.metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return {
         "msg_id": msg_id,
-        "original": len(raw),
-        "compressed": len(compressed),
-        "chunks": len(backend._chunk_data(compressed)),
+        "original": media.metadata["original_bytes"],
+        "compressed": len(media.data),
+        "chunks": backend.messages[msg_id].total_chunks,
+        "metadata": media.metadata,
     }
 
 
+@app.post("/send/text")
+async def send_text(src: str = Form(...), dst: str = Form(...), text: str = Form(...)):
+    try:
+        media = encode_text(text)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return await submit_media(src, dst, media, text[:60])
+
+
+async def read_and_encode(file, encoder):
+    raw = await file.read(MAX_UPLOAD + 1)
+    if len(raw) > MAX_UPLOAD:
+        raise HTTPException(413, "Upload exceeds 10 MiB")
+    try:
+        return await asyncio.to_thread(encoder, raw)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/send/image")
+async def send_image(
+    src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)
+):
+    media = await read_and_encode(file, encode_image)
+    return await submit_media(
+        src, dst, media, f"Image {media.metadata['width']}x{media.metadata['height']}"
+    )
+
+
 @app.post("/send/voice")
-async def send_voice(src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)):
-    raw = await file.read()
-    compressed = raw[:1200]  # placeholder aggressive compression
-    preview = f"Voice note ({len(compressed)}B compressed)"
-    msg_id = await backend.send_message(src, dst, compressed, "voice", preview)
-    return {"msg_id": msg_id, "chunks": len(backend._chunk_data(compressed))}
+async def send_voice(
+    src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)
+):
+    media = await read_and_encode(file, encode_voice)
+    return await submit_media(src, dst, media, "Opus voice (first 5 seconds maximum)")
+
+
+@app.post("/send/video")
+async def send_video(
+    src: str = Form(...), dst: str = Form(...), file: UploadFile = File(...)
+):
+    media = await read_and_encode(file, encode_video)
+    return await submit_media(src, dst, media, media.metadata["quality_label"])
+
+
+@app.post("/simulation/config")
+async def configure_simulation(config: SimulationConfig):
+    if any(not task.done() for task in backend._tasks.values()):
+        raise HTTPException(
+            409, "Wait for active transfers to finish before changing radio settings"
+        )
+    backend.configure(**config.model_dump(exclude_none=True))
+    return backend.get_state()["simulation"]
+
+
+@app.post("/simulation/reset")
+async def reset_simulation():
+    global backend
+    config = dict(
+        loss_rate=backend.loss_rate,
+        bit_rate=backend.bit_rate,
+        seed=backend.seed,
+        playback_speed=backend.playback_speed,
+        radio_range=backend.radio_range,
+        use_fec=backend.use_fec,
+    )
+    await backend.close()
+    backend = MeshBackend(**config)
+    backend.on_state_change = on_backend_change
+    on_backend_change()
+    return backend.get_state()
+
+
+@app.post("/demo/{media_type}")
+async def send_demo(media_type: str):
+    assets = Path(__file__).resolve().parent.parent / "demo_assets"
+    choices = {
+        "voice": ("voice.wav", encode_voice),
+        "image": ("camp.png", encode_image),
+        "video": ("camp.mp4", encode_video),
+    }
+    if media_type not in choices:
+        raise HTTPException(404, "Unknown demo media")
+    name, encoder = choices[media_type]
+    media = await asyncio.to_thread(encoder, (assets / name).read_bytes())
+    return await submit_media("node0", "node5", media, f"Demo {media_type}")
+
+
+@app.get("/messages/{msg_id}/content")
+async def received_content(msg_id: str):
+    if msg_id not in backend.messages:
+        raise HTTPException(404, "Unknown message")
+    media = backend.received_media.get(msg_id)
+    if media is None:
+        raise HTTPException(409, "Receiver has not verified complete content")
+    return Response(
+        render_media(media),
+        media_type=media.metadata["mime"],
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@app.post("/nodes/{node_id}/status")
+async def node_status(node_id: str, online: bool = Form(...)):
+    if node_id not in backend.nodes:
+        raise HTTPException(404, "Unknown node")
+    backend.set_node_online(node_id, online)
+    return {"node_id": node_id, "online": online}
 
 
 @app.get("/nodes")
@@ -118,7 +242,11 @@ async def get_state():
 
 
 # Serve static files (the demo UI)
-app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+    name="static",
+)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+work/
+node_modules/
+dist/
+.expo/
+.env.local
+coverage/
+test-results/
+playwright-report/
+.superpowers/
+.worktrees/
+.DS_Store

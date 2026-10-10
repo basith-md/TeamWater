@@ -10,10 +10,12 @@ datamodel-codegen \
   --input openapi.yaml \
   --output shared/python/models.py \
   --input-file-type openapi \
-  --output-model-type pydantic_v2.BaseModel
+  --output-model-type pydantic_v2.BaseModel \
+  --disable-timestamp \
+  --formatters black isort
 
 echo "Generating TypeScript types..."
-npx --yes openapi-typescript openapi.yaml -o shared/typescript/api.ts
+npx --yes openapi-typescript@7.13.0 openapi.yaml -o shared/typescript/api.ts
 
 echo ""
 echo "Done. Types regenerated from openapi.yaml"

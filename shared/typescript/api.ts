@@ -89,6 +89,105 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/send/video": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a silent 1 fps video summary (first 5 seconds; <=12 KiB) */
+        post: operations["sendVideo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/simulation/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["configureSimulation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/simulation/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel transfers and reset nodes/messages while preserving radio settings */
+        post: operations["resetSimulation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/nodes/{node_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["setNodeStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/{msg_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getReceivedContent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/demo/{media_type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a bundled asset from Alice to Frank */
+        post: operations["sendDemo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -105,9 +204,10 @@ export interface components {
             /** Format: float */
             y: number;
             color: string;
+            online?: boolean;
         };
         /** @enum {string} */
-        MessageStatus: "sending" | "in_transit" | "reassembled" | "delivered" | "failed";
+        MessageStatus: "sending" | "in_transit" | "awaiting_receipt" | "delivered" | "failed" | "receipt_unconfirmed" | "cancelled";
         Message: {
             msg_id: string;
             src: string;
@@ -118,14 +218,37 @@ export interface components {
             status: components["schemas"]["MessageStatus"];
             route: string[];
             /** Format: float */
-            eta: number;
+            eta: number | null;
             /** @enum {string} */
-            media_type: "text" | "image" | "voice";
+            media_type: "text" | "image" | "voice" | "video" | "ai_request" | "ai_response";
             preview: string;
             /** Format: float */
             progress: number;
             /** Format: float */
             created_at?: number;
+            radio_bytes?: number;
+            retries?: number;
+            lost_packets?: number;
+            fec_recovered?: number;
+            data_retries?: number;
+            control_retries?: number;
+            frames_sent?: number;
+            airtime_seconds?: number;
+            elapsed_seconds?: number;
+            efficiency?: number;
+            received_ids?: number[];
+            acked_ids?: number[];
+            missing_ids?: number[];
+            /** @enum {string} */
+            receiver_status?: "waiting" | "partial" | "verified";
+            metadata?: components["schemas"]["MediaMetadata"];
+            route_history?: string[][];
+            active_link?: string[];
+            route_available?: boolean;
+            receiver_verified_at?: number | null;
+            content_url?: string | null;
+            error?: string;
+            eta_basis?: string;
         };
         MeshState: {
             nodes: components["schemas"]["Node"][];
@@ -135,20 +258,93 @@ export interface components {
             messages: {
                 [key: string]: components["schemas"]["Message"];
             };
+            simulation?: components["schemas"]["Simulation"];
+            events?: components["schemas"]["PacketEvent"][];
         };
         SendTextResponse: {
             msg_id: string;
+            original: number;
+            compressed: number;
             chunks: number;
+            metadata: components["schemas"]["MediaMetadata"];
         };
         SendImageResponse: {
             msg_id: string;
             original: number;
             compressed: number;
             chunks: number;
+            metadata: components["schemas"]["MediaMetadata"];
         };
         SendVoiceResponse: {
             msg_id: string;
+            original: number;
+            compressed: number;
             chunks: number;
+            metadata: components["schemas"]["MediaMetadata"];
+        };
+        SimulationConfig: {
+            loss_rate?: number;
+            bit_rate?: number;
+            seed?: number;
+            playback_speed?: number;
+            radio_range?: number;
+            use_fec?: boolean;
+        };
+        Simulation: {
+            loss_rate: number;
+            bit_rate: number;
+            playback_speed: number;
+            simulation_time: number;
+            range_meters: number;
+            seed: number;
+            window_size: number;
+            queue_depth: number;
+            model: string;
+            fec: boolean;
+        };
+        MediaMetadata: {
+            original_bytes?: number;
+            encoded_bytes?: number;
+            transfer_bytes?: number;
+            width?: number;
+            height?: number;
+            byte_budget?: number;
+            frame_count?: number;
+            clip_limit_seconds?: number;
+            target_bitrate_bps?: number;
+            encoded_bitrate_bps?: number;
+            codec?: string;
+            mime?: string;
+            media_type?: string;
+            quality_label?: string;
+            clip_policy?: string;
+            duration_seconds?: number;
+            source_duration_seconds?: number;
+            frames_per_second?: number;
+            audio_included?: boolean;
+        } & {
+            [key: string]: unknown;
+        };
+        PacketEvent: {
+            sequence: number;
+            type: string;
+            msg_id: string;
+            simulation_time: number;
+            source?: string;
+            destination?: string;
+            kind?: number;
+            chunk?: number;
+            frame_bytes?: number;
+            chunk_ids?: number[];
+        } & {
+            [key: string]: unknown;
+        };
+        SendVideoResponse: {
+            msg_id: string;
+            original: number;
+            compressed: number;
+            chunks: number;
+            metadata: components["schemas"]["MediaMetadata"];
         };
     };
     responses: never;
@@ -188,6 +384,20 @@ export interface operations {
                     "application/json": components["schemas"]["SendTextResponse"];
                 };
             };
+            /** @description Invalid media or nodes */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Upload exceeds 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     sendImage: {
@@ -217,6 +427,20 @@ export interface operations {
                     "application/json": components["schemas"]["SendImageResponse"];
                 };
             };
+            /** @description Invalid media or nodes */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Upload exceeds 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     sendVoice: {
@@ -245,6 +469,20 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SendVoiceResponse"];
                 };
+            };
+            /** @description Invalid media or nodes */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Upload exceeds 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -285,6 +523,215 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MeshState"];
                 };
+            };
+        };
+    };
+    sendVideo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    dst: string;
+                    /** Format: binary */
+                    file: string;
+                    src: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Video summary accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendVideoResponse"];
+                };
+            };
+            /** @description Invalid media or nodes */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Upload exceeds 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    configureSimulation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulationConfig"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Simulation"];
+                };
+            };
+            /** @description A transfer is active */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid configuration */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resetSimulation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeshState"];
+                };
+            };
+        };
+    };
+    setNodeStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    online: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        node_id?: string;
+                        online?: boolean;
+                    };
+                };
+            };
+            /** @description Unknown node */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getReceivedContent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                msg_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verified receiver bytes only; text is decompressed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                    "application/json": string;
+                    "image/webp": string;
+                    "audio/ogg": string;
+                    "video/mp4": string;
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description Unknown message */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Receiver is incomplete */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    sendDemo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                media_type: "voice" | "image" | "video";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendVideoResponse"];
+                };
+            };
+            /** @description Unknown asset */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

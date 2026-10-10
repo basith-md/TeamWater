@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "TeamWater",
+    "slug": "teamwater",
+    "scheme": "teamwater",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.teamwater.mesh",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "android": {
+      "package": "com.teamwater.mesh"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-audio"
+    ]
+  }
+}
