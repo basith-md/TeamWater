@@ -247,7 +247,7 @@ paths:
   /simulation/reset:
     post:
       operationId: resetSimulation
-      summary: Cancel transfers and reset nodes/messages while preserving radio settings
+      summary: Cancel transfers and clear messages/events while preserving node topology and radio/routing settings
       responses:
         '200':
           description: OK

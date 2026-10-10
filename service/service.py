@@ -5,6 +5,7 @@ Other services can also import MeshBackend directly and skip this layer.
 """
 
 import asyncio
+from copy import deepcopy
 import os
 from typing import Set
 
@@ -239,6 +240,7 @@ async def move_node(node_id: str, position: NodePosition):
 @app.post("/simulation/reset")
 async def reset_simulation():
     global backend
+    nodes = deepcopy(backend.nodes)
     config = dict(
         loss_rate=backend.loss_rate,
         bit_rate=backend.bit_rate,
@@ -249,11 +251,14 @@ async def reset_simulation():
         link_retries=backend.link_retries,
         diverse_routes=backend.diverse_routes,
         distance_routing=backend.distance_routing,
+        max_attempts=backend.max_attempts,
     )
     await backend.close()
     await gateway.close()
     gateway.requests.clear()
     backend = MeshBackend(**config)
+    backend.nodes = nodes
+    backend.configure()
     backend.on_state_change = on_backend_change
     on_backend_change()
     return backend.get_state()

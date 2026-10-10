@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { MeshClient, MeshMessage, MeshState } from '@teamwater/core';
 import { App } from './App';
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 function message(id: string, route: string[]): MeshMessage {
   return { id, src: 'node0', dst: 'node4', kind: 'text', preview: id, text: id,
@@ -13,7 +13,7 @@ function message(id: string, route: string[]): MeshMessage {
     createdAt: 0, etaSeconds: null, integrity: 'unverified', receiptConfirmed: false };
 }
 
-function makeClient(overrides: Partial<MeshState> = {}): MeshClient {
+function makeClient(overrides: Partial<MeshState> = {}): MeshClient & { publish: (next: Partial<MeshState>) => void } {
   let state: MeshState = {
     mode: 'replay', connection: 'connected', endpoint: '/api', scenario: 'clean', error: null,
     nodes: [{ id: 'node0', name: 'Boss', x: 0, y: 0, color: '#ff632d', online: true },
@@ -26,11 +26,13 @@ function makeClient(overrides: Partial<MeshState> = {}): MeshClient {
   const listeners = new Set<() => void>();
   const update = (next: Partial<MeshState>) => { state = { ...state, ...next }; listeners.forEach(listener => listener()); };
   return {
+    publish: update,
     getSnapshot: () => state, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
     start() {}, dispose() {}, setMode: (mode, endpoint) => update({ mode, endpoint: endpoint ?? state.endpoint }),
     setScenario: scenario => update({ scenario }),
     setPlaybackSpeed: playbackSpeed => update({ config: { ...state.config, playbackSpeed } }),
     reset: () => update({ messages: {}, events: [] }),
+    resetConversation: async () => update({ messages: {}, events: [] }),
     sendText: async (src, dst, text) => {
       const id = `message-${Object.keys(state.messages).length + 1}`;
       const route = src === 'node0' ? ['node0', 'node2', 'node4'] : ['node4', 'node2', 'node0'];
@@ -45,6 +47,122 @@ function makeClient(overrides: Partial<MeshState> = {}): MeshClient {
 }
 
 describe('mesh console', () => {
+  it('plays visible 70ms typing in both composers and waits for each verified receipt', async () => {
+    vi.useFakeTimers();
+    const invitation = 'Basith, come meet me at the Mayan Warrior set in deep playa!';
+    const reply = 'On my way from the playa airport, Malcome. See you at Mayan Warrior!';
+    const client = makeClient({ mode: 'live', messages: { old: message('old', ['node0', 'node4']) } });
+    const sent: { src: string; dst: string; text: string; id: string }[] = [];
+    client.sendText = async (src, dst, text) => {
+      const id = `demo-${sent.length + 1}`;
+      sent.push({ src, dst, text, id });
+      client.publish({ messages: { ...client.getSnapshot().messages, [id]: { ...message(id, [src, dst]), src, dst, text, preview: text, status: 'sending' } } });
+      return id;
+    };
+    render(<App client={client}/>);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Play demo' })));
+    const left = within(screen.getByTestId('phone-boss'));
+    const right = within(screen.getByTestId('phone-employee'));
+    expect(client.getSnapshot().messages.old).toBeUndefined();
+    expect(screen.getByRole('button', { name: 'Play demo' })).toBeDisabled();
+    expect(left.getByLabelText('Send message')).toHaveAttribute('aria-disabled', 'true');
+    expect(right.getByLabelText('Record voice')).toBeDisabled();
+    await act(async () => vi.advanceTimersByTimeAsync(69));
+    expect(left.getByLabelText('Message input')).toHaveValue('');
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(left.getByLabelText('Message input')).toHaveValue('B');
+    await act(async () => vi.advanceTimersByTimeAsync(70 * (invitation.length - 1)));
+    expect(sent).toEqual([{ src: 'node0', dst: 'node4', text: invitation, id: 'demo-1' }]);
+    const confirm = (id: string, receiptConfirmed: boolean) => client.publish({ messages: { ...client.getSnapshot().messages, [id]: { ...client.getSnapshot().messages[id], received: 2, acked: 2, integrity: 'verified', receiptConfirmed, status: receiptConfirmed ? 'delivered' : 'awaiting_receipt' } } });
+    act(() => confirm('demo-1', false));
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(right.getByLabelText('Message input')).toHaveValue('');
+    expect(sent).toHaveLength(1);
+    act(() => confirm('demo-1', true));
+    await act(async () => vi.advanceTimersByTimeAsync(70));
+    expect(right.getByLabelText('Message input')).toHaveValue('O');
+    await act(async () => vi.advanceTimersByTimeAsync(70 * (reply.length - 1)));
+    expect(sent[1]).toEqual({ src: 'node4', dst: 'node0', text: reply, id: 'demo-2' });
+    await act(async () => confirm('demo-2', true));
+    expect(screen.getByRole('status', { name: 'Demo playback' })).toHaveTextContent('Demo complete');
+    expect(screen.getByRole('button', { name: 'Play demo' })).toBeEnabled();
+    expect(left.getByText(invitation, { exact: true })).toBeVisible();
+    expect(right.getByText(reply, { exact: true })).toBeVisible();
+    expect(left.getByLabelText('Message input')).toHaveValue('');
+    expect(right.getByLabelText('Message input')).toHaveValue('');
+  });
+
+  it('cancels the typing rehearsal when Reset demo is pressed', async () => {
+    vi.useFakeTimers();
+    const client = makeClient({ mode: 'live' });
+    client.sendText = vi.fn(client.sendText);
+    render(<App client={client}/>);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Play demo' })));
+    await act(async () => vi.advanceTimersByTimeAsync(140));
+    expect(within(screen.getByTestId('phone-boss')).getByLabelText('Message input')).toHaveValue('Ba');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Reset demo' })));
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(client.getSnapshot().messages).toEqual({});
+    expect(within(screen.getByTestId('phone-boss')).getByLabelText('Message input')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Play demo' })).toBeEnabled();
+    expect(client.sendText).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { connection: 'disconnected' as const },
+    { mode: 'replay' as const },
+    { endpoint: 'https://other.example/api' },
+  ])('stops before sending when the active simulator changes during typing: %o', async change => {
+    vi.useFakeTimers();
+    const client = makeClient({ mode: 'live' });
+    client.sendText = vi.fn(client.sendText);
+    render(<App client={client}/>);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Play demo' })));
+    await act(async () => vi.advanceTimersByTimeAsync(140));
+    await act(async () => client.publish(change));
+    expect(screen.getByRole('alert')).toHaveTextContent('Demo stopped: Simulator connection changed');
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(client.sendText).not.toHaveBeenCalled();
+    expect(within(screen.getByTestId('phone-boss')).getByLabelText('Message input')).not.toHaveAttribute('readonly');
+  });
+
+  it('stops the demo with an actionable reset error instead of sending into the old conversation', async () => {
+    const client = makeClient({ mode: 'live' });
+    client.resetConversation = async () => { throw new Error('Simulator is unavailable'); };
+    render(<App client={client}/>);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Play demo' })));
+    expect(screen.getByRole('alert')).toHaveTextContent('Demo stopped: Simulator is unavailable');
+    expect(client.getSnapshot().messages).toEqual({});
+    expect(screen.getByRole('button', { name: 'Play demo' })).toBeEnabled();
+  });
+
+  it('clears both histories, the ledger, selected route and drafts after a successful reset', async () => {
+    const client = makeClient({ mode: 'live', messages: { alpha: { ...message('alpha', ['node0', 'node2', 'node4']), received: 2, integrity: 'verified' } },
+      events: [{ id: 'alpha-tx', sequence: 1, at: 100, messageId: 'alpha', kind: 'packet_tx', from: 'node0', to: 'node2', packetId: 'alpha-01', bytes: 32 }] });
+    const nodes = client.getSnapshot().nodes;
+    render(<App client={client}/>);
+    const inputs = screen.getAllByRole('textbox', { name: 'Message input' });
+    fireEvent.change(inputs[0], { target: { value: 'Old draft' } });
+    fireEvent.change(inputs[1], { target: { value: 'Old reply' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset demo' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Inspect message alpha' })).not.toBeInTheDocument());
+    for (const input of screen.getAllByRole('textbox', { name: 'Message input' })) expect(input).toHaveValue('');
+    expect(screen.getByRole('status', { name: 'Selected message' })).toHaveTextContent('No message selected');
+    expect(screen.getByLabelText('Selected route')).toHaveTextContent('Send a message to trace its route');
+    expect(screen.getByRole('table', { name: 'Packet ledger' })).not.toHaveTextContent('alpha-01');
+    expect(client.getSnapshot().nodes).toEqual(nodes);
+  });
+
+  it('retains the current conversation and drafts when reset fails', async () => {
+    const client = makeClient({ mode: 'live', messages: { alpha: message('alpha', ['node0', 'node4']) } });
+    client.resetConversation = vi.fn().mockRejectedValue(new Error('Reset unavailable'));
+    render(<App client={client}/>);
+    fireEvent.change(screen.getAllByRole('textbox', { name: 'Message input' })[0], { target: { value: 'Keep my draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset demo' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Reset unavailable');
+    expect(screen.getAllByRole('textbox', { name: 'Message input' })[0]).toHaveValue('Keep my draft');
+    expect(screen.getByRole('button', { name: 'Inspect message alpha' })).toBeInTheDocument();
+  });
   it('shows selected message verification without claiming a cryptographic signature', () => {
     render(<App client={makeClient({ mode: 'live', messages: { alpha: {
       ...message('alpha', ['node0', 'node2', 'node4']), status: 'delivered', received: 2,
@@ -80,20 +198,22 @@ describe('mesh console', () => {
     expect(screen.getByRole('status', { name: 'Selected message' })).toHaveTextContent('Receiver verified · awaiting receipt');
   });
 
-  it('starts the newly chosen pair with correctly addressed drafts', () => {
+  it('starts the default and newly chosen pair with empty composers', () => {
     render(<App client={makeClient({ mode: 'live' })}/>);
-    expect(screen.getByRole('combobox', { name: 'Left phone node' })).toHaveValue('node0');
-    expect(screen.getByRole('combobox', { name: 'Right phone node' })).toHaveValue('node4');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Right phone node' }), { target: { value: 'node2' } });
-    expect(within(screen.getByTestId('phone-boss')).getByRole('textbox', { name: 'Message input' })).toHaveValue('Lucas, where are you on the playa?');
-    expect(within(screen.getByTestId('phone-employee')).getByRole('textbox', { name: 'Message input' })).toHaveValue('Malcome, I can hear you through the mesh!');
+    expect(screen.getByRole('combobox', { name: 'Left phone node' })).toHaveTextContent('Malcome');
+    expect(screen.getByRole('combobox', { name: 'Right phone node' })).toHaveTextContent('Basith');
+    fireEvent.click(screen.getByRole('combobox', { name: 'Right phone node' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Lucas (node2)' }));
+    expect(within(screen.getByTestId('phone-boss')).getByRole('textbox', { name: 'Message input' })).toHaveValue('');
+    expect(within(screen.getByTestId('phone-employee')).getByRole('textbox', { name: 'Message input' })).toHaveValue('');
   });
 
   it('never lets both phones pick the same node', () => {
     render(<App client={makeClient({ mode: 'live' })}/>);
-    const right = screen.getByRole('combobox', { name: 'Right phone node' });
-    expect(within(right).getByRole('option', { name: 'Malcome' })).toBeDisabled();
-    expect(within(screen.getByRole('combobox', { name: 'Left phone node' })).getByRole('option', { name: 'Basith' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Right phone node' }));
+    expect(within(screen.getByRole('listbox', { name: 'Right phone node options' })).getByRole('option', { name: 'Malcome (node0)' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Left phone node' }));
+    expect(within(screen.getByRole('listbox', { name: 'Left phone node options' })).getByRole('option', { name: 'Basith (node4)' })).toBeDisabled();
   });
 
   it('reports route verification from proof data without inventing a Dijkstra check', () => {
@@ -109,7 +229,7 @@ describe('mesh console', () => {
     const client = makeClient();
     const nodes = client.getSnapshot().nodes;
     render(<App client={makeClient({ nodes: [...nodes, { id: 'node1', name: 'Bob', x: 60, y: 60, color: '#777', online: true }] })}/>);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Water Connect');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Message Your People At Burning Man Without Cell Service');
     const map = within(screen.getByRole('img', { name: 'Mesh network topology' }));
     for (const label of ['Malcome · Deep playa', 'Basith · Playa airport', 'Lucas · Relay', 'Shravanthi · Relay']) {
       expect(map.getByText(label, { selector: 'text' })).toBeInTheDocument();
@@ -135,10 +255,9 @@ describe('mesh console', () => {
     expect(receiverProfile).toHaveTextContent('Playa airport');
     expect(receiverProfile).toHaveTextContent('NODE4');
     expect(receiver.contains(receiverProfile)).toBe(false);
-    const pair = screen.getByRole('group', { name: 'Choose phones' });
-    expect(within(pair).getByLabelText('Left phone node')).toHaveValue('node0');
-    expect(within(pair).getByLabelText('Right phone node')).toHaveValue('node4');
-    expect(within(phone).getByRole('textbox', { name: 'Message input' })).toHaveValue('Basith, come meet me at the Mayan Warrior set in deep playa!');
+    const network = screen.getByRole('region', { name: 'Network console' });
+    expect(within(network).getByRole('heading', { name: 'Malcome → Basith' })).toBeInTheDocument();
+    expect(within(phone).getByRole('textbox', { name: 'Message input' })).toHaveValue('');
   });
 
   it('shows the other Burning Man people by their backend names and actual online status', () => {
@@ -161,8 +280,8 @@ describe('mesh console', () => {
     const receiver = within(screen.getByTestId('phone-employee'));
     const invitation = 'Basith, come meet me at the Mayan Warrior set in deep playa!';
     const reply = 'On my way from the playa airport. See you at Mayan Warrior!';
-    expect(sender.getByRole('textbox', { name: 'Message input' })).toHaveValue(invitation);
-    expect(receiver.getByRole('textbox', { name: 'Message input' })).toHaveValue(reply);
+    fireEvent.change(sender.getByRole('textbox', { name: 'Message input' }), { target: { value: invitation } });
+    fireEvent.change(receiver.getByRole('textbox', { name: 'Message input' }), { target: { value: reply } });
     fireEvent.click(sender.getByRole('button', { name: 'Send message' }));
     await waitFor(() => expect(receiver.getByText(invitation)).toBeInTheDocument());
     expect(client.getSnapshot().messages['message-1']).toMatchObject({ src: 'node0', dst: 'node4', text: invitation });
@@ -199,7 +318,7 @@ describe('mesh console', () => {
     expect(screen.queryByRole('button', { name: 'Live simulation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Replay scenario' })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Playback speed' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Reset demo' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reset demo' })).toBeInTheDocument();
   });
 
   it('filters route and packet events by the inspected message', () => {

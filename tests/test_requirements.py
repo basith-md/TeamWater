@@ -358,3 +358,42 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 409, response.text)
         self.assertEqual(self.service.backend.nodes["node0"].x, 80)
+
+    async def test_reset_cancels_transfers_and_clears_content_preserving_mesh(self):
+        backend = self.service.backend
+        for index, node in enumerate(backend.nodes.values()):
+            node.name = f"Camper {index}"
+            node.x, node.y = index * 400, index % 2 * 300
+        backend.set_node_online("node5", False)
+        backend.configure(radio_range=1000, bit_rate=2100, loss_rate=0.2,
+                          seed=17, diverse_routes=True, distance_routing=True,
+                          link_retries=2, use_fec=False, max_attempts=32)
+        response = await self.client.post(
+            "/send/text", data={"src": "node0", "dst": "node4", "text": "Clear this verified text"}
+        )
+        delivered_id = response.json()["msg_id"]
+        await backend.wait_message(delivered_id)
+        self.assertIn(delivered_id, backend.received_media)
+        backend.configure(playback_speed=0.01)
+        before = (await self.client.get("/state")).json()
+        response = await self.client.post(
+            "/send/text", data={"src": "node4", "dst": "node0", "text": "Cancel this active text"}
+        )
+        task = backend._tasks[response.json()["msg_id"]]
+        self.assertFalse(task.done())
+        response = await self.client.post("/simulation/reset")
+        self.assertEqual(response.status_code, 200, response.text)
+        after = response.json()
+        self.assertTrue(task.done())
+        self.assertEqual(after["nodes"], before["nodes"])
+        self.assertEqual(after["connections"], before["connections"])
+        for key in ["range_meters", "bit_rate", "loss_rate", "seed", "playback_speed",
+                    "fec", "link_retries", "distance_routing", "link_metrics"]:
+            self.assertEqual(after["simulation"][key], before["simulation"][key], key)
+        self.assertTrue(self.service.backend.diverse_routes)
+        self.assertEqual(self.service.backend.max_attempts, 32)
+        self.assertEqual(after["messages"], {})
+        self.assertEqual(after["events"], [])
+        self.assertEqual(after["simulation"]["simulation_time"], 0)
+        self.assertEqual(after["simulation"]["queue_depth"], 0)
+        self.assertEqual((await self.client.get(f"/messages/{delivered_id}/content")).status_code, 404)

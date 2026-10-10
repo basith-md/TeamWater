@@ -165,7 +165,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Cancel transfers and reset nodes/messages while preserving radio settings */
+        /** Cancel transfers and clear messages/events while preserving node topology and radio/routing settings */
         post: operations["resetSimulation"];
         delete?: never;
         options?: never;

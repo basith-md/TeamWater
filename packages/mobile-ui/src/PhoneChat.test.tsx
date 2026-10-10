@@ -30,6 +30,27 @@ class FakeClient implements MeshClient {
 }
 
 describe('PhoneChat', () => {
+  it('shows a supplied demo draft in the real composer and locks manual sends and recording', () => {
+    const client = new FakeClient();
+    const recorder = ({ disabled }: { disabled: boolean }) => <Text>{disabled ? 'Recording locked' : 'Recording ready'}</Text>;
+    const view = render(<PhoneChat client={client} role="boss" demoDraft="B" disabled renderVoiceRecorder={recorder}/>);
+    const input = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+    expect(input.value).toBe('B');
+    expect(input.readOnly).toBe(true);
+    expect(screen.getByLabelText('Send message').getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByLabelText('Attach image').getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByText('Recording locked')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Send message'));
+    expect(client.state.messages).toEqual({});
+    view.rerender(<PhoneChat client={client} role="boss" demoDraft="Basith" disabled renderVoiceRecorder={recorder}/>);
+    expect(screen.getByLabelText('Message input')).toBe(input);
+    expect(input.value).toBe('Basith');
+    view.rerender(<PhoneChat client={client} role="boss" renderVoiceRecorder={recorder}/>);
+    fireEvent.change(input, { target: { value: 'My manual follow-up' } });
+    expect(input.value).toBe('My manual follow-up');
+    expect(input.readOnly).toBe(false);
+  });
+
   it('grows for measured multiline content without remounting the recorder and shrinks when cleared', () => {
     render(<PhoneChat client={new FakeClient()} role="boss" compact renderVoiceRecorder={() => <Text>Recorder stays ready</Text>}/>);
     const input = screen.getByLabelText('Message input') as HTMLTextAreaElement;

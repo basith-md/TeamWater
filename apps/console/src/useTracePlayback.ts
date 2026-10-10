@@ -50,7 +50,7 @@ export function useTracePlayback(events: MeshEvent[], key: string) {
   return { ...view, replay: () => consume(true) };
 }
 
-/** The radio is shared: show the newest TX only until its matching RX/drop. */
+/** The radio is shared: keep the newest TX active through drops until its matching RX. */
 export function liveTransmission(events: MeshEvent[], terminal: boolean): MeshEvent | null {
   if (terminal) return null;
   let active: MeshEvent | null = null;

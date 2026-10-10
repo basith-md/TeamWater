@@ -6,6 +6,8 @@ test('Malcome invites Basith through the live playa mesh and receives a verified
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
+  await page.getByRole('button', { name: 'Reset demo', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Selected message' })).toContainText('No message selected');
   const sender = page.getByTestId('phone-boss');
   const receiver = page.getByTestId('phone-employee');
   await expect(sender.getByPlaceholder('Message Basith…')).toBeVisible();
@@ -16,6 +18,9 @@ test('Malcome invites Basith through the live playa mesh and receives a verified
   await expect(page.getByRole('img', { name: 'Mesh network topology' })).toContainText('Shravanthi');
   await expect(page.getByRole('status', { name: 'Simulation status' })).toContainText('Live simulation');
   await expect(page.getByRole('button', { name: 'Sample replay', exact: true })).toHaveCount(0);
+  // Keep both composers empty until their turn in the recording.
+  await sender.getByLabel('Message input').fill('');
+  await receiver.getByLabel('Message input').fill('');
   const expectRealMultiRelayRoute = async (source: string, destination: string) => {
     const selectedRoute = page.getByLabel('Selected route');
     await expect.poll(async () => {
@@ -31,23 +36,41 @@ test('Malcome invites Basith through the live playa mesh and receives a verified
       expect(snapshot.connections[route[index]]).toContain(route[index + 1]);
     }
   };
-  const invitation = `Basith, come meet me at the Mayan Warrior set in deep playa! (${Date.now()})`;
-  await sender.getByLabel('Message input').fill(invitation);
-  await sender.getByRole('button', { name: 'Send message', exact: true }).click();
-  await expect(page.getByTestId('trace-packet')).toBeVisible();
+  const invitation = 'Basith, come meet me at the Mayan Warrior set in deep playa!';
+  const play = page.getByRole('button', { name: 'Play demo', exact: true });
+  await play.click();
+  await expect(sender.getByLabel('Message input')).toHaveValue(/^Basith/);
+  await expect(page.getByTestId('trace-packet')).toBeVisible({ timeout: 15_000 });
   await expect(receiver.getByText(invitation, { exact: true })).toBeVisible({ timeout: 90_000 });
   await expect(receiver.getByText('Receiver verified', { exact: true }).last()).toBeVisible();
   await expectRealMultiRelayRoute('node0', 'node4');
-  await expect(page.getByTestId('packet-log')).toContainText('Verified receipt');
-  const reply = `On my way from the playa airport, Malcome. See you at Mayan Warrior! (${Date.now()})`;
-  await receiver.getByLabel('Message input').fill(reply);
-  await receiver.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(page.getByTestId('packet-log')).toContainText('Verified receipt', { timeout: 90_000 });
+  const reply = 'On my way from the playa airport, Malcome. See you at Mayan Warrior!';
   await expect(sender.getByText(reply, { exact: true })).toBeVisible({ timeout: 90_000 });
   await expect(sender.getByText('Receiver verified', { exact: true }).last()).toBeVisible();
   await expectRealMultiRelayRoute('node4', 'node0');
+  await expect(receiver.getByText('Delivered', { exact: true }).last()).toBeVisible({ timeout: 90_000 });
+  await expect(play).toBeEnabled();
   for (const name of ['Bandwidth', 'Delay', 'Range', 'Packet loss']) {
     await expect(page.getByRole('group', { name, exact: true })).not.toContainText('Unavailable');
   }
   expect(errors).toEqual([]);
   await page.screenshot({ path: '/tmp/teamwater-playa-verified.png', fullPage: true });
+  const beforeReset = await (await page.request.get(`${process.env.TEAMWATER_PIPELINE_URL}/state`)).json();
+  await sender.getByLabel('Message input').fill('Unsent draft');
+  await receiver.getByLabel('Message input').fill('Another draft');
+  await page.getByRole('button', { name: 'Reset demo', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Reset demo', exact: true })).toHaveText('Reset demo');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('status', { name: 'Selected message' })).toContainText('No message selected');
+  await expect(sender.getByLabel('Message input')).toHaveValue('');
+  await expect(receiver.getByLabel('Message input')).toHaveValue('');
+  await expect(page.getByText(invitation, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(reply, { exact: true })).toHaveCount(0);
+  const afterReset = await (await page.request.get(`${process.env.TEAMWATER_PIPELINE_URL}/state`)).json();
+  expect(afterReset.messages).toEqual({});
+  expect(afterReset.events).toEqual([]);
+  expect(afterReset.nodes).toEqual(beforeReset.nodes);
+  expect(afterReset.connections).toEqual(beforeReset.connections);
+  await page.screenshot({ path: '/tmp/teamwater-reset-demo.png', fullPage: true });
 });

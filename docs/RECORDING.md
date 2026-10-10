@@ -33,6 +33,19 @@ come from backend simulation time.
 
 ## Recording sequence
 
+Click **Play demo** in the top-right corner to run the invitation and reply.
+It clears the previous conversation, types into each phone one character at a
+time, and waits for verified delivery before starting the reply. The final
+conversation stays visible. **Reset demo** stops playback and clears it.
+
+For a separate live terminal ledger, double-click `scripts/packet-ledger.command`
+on macOS, or run `npm run demo:ledger` from another terminal. Place that window
+beside Chrome for the recording. It follows all six nodes through the same
+backend WebSocket and clears when Reset demo resets the simulator. It does not
+start duplicate nodes or generate additional traffic.
+
+To run the conversation manually:
+
 1. Show the names, positions, and six online nodes.
 2. Send the prepared invitation from Malcome's left phone.
 3. Show packets moving through the relays and Basith's receiver verification.
@@ -41,15 +54,22 @@ come from backend simulation time.
 6. For voice, record up to five seconds, preview, send, and play the verified
    audio on the receiving phone. Chrome microphone permission is required.
 
+For an automated rehearsal, run `npm run demo:record`. It uses the top-right
+**Reset demo** button to start a clean conversation, then clicks **Play demo**
+and verifies the messages and multi-relay routes. Messages contain no test
+timestamps. After saving the delivery
+screenshot, the rehearsal checks Reset demo again and leaves both phones empty.
+This runs the browser rehearsal; start Loom separately to record it.
+
 Voice uses Codec2 at 1,200 bps on the simulated radio. The backend decodes the
 verified receiver bytes into mono 8 kHz WAV for browser playback. Uploaded audio
 is limited to the first five seconds. Runtime dependencies include FFmpeg,
 `pycodec2`, NumPy, and the native Codec2 shared library (`brew install codec2` on
 this Mac). The downloaded WAV is larger than the compressed radio payload.
 
-Restart only the port 8003 process and reload the console for a clean take.
-The backend's general `/simulation/reset` restores its default topology, so it
-is not the recording reset. The shared preview and Expo services are retired;
+Use **Reset demo** in the top-right corner for a clean take. It clears both
+phones, active transfers, drafts, and the packet ledger while preserving relay
+positions and radio settings. The shared preview and Expo services are retired;
 only the console on port 5173 and recording backend on port 8003 need to run.
 
 The remote boss → gate → Jordan coding workflow is separate and not part of

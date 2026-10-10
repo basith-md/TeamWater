@@ -102,12 +102,20 @@ describe('live packet synchronization', () => {
     expect(screen.getByTestId('trace-packet')).toHaveAttribute('data-event-id', 'event-3');
     expect(playback()).not.toHaveTextContent('queued');
     expect(screen.getByText('Live packet activity')).toBeInTheDocument();
-    expect(screen.getByTestId('trace-packet').querySelector('[path]')).toHaveAttribute('path', 'M300,242 L418,157');
-    expect(screen.getByTestId('trace-packet').querySelector('[path]')).toHaveAttribute('fill', 'freeze');
+    const motion = screen.getByTestId('trace-packet').querySelector('[path]');
+    expect(motion).toHaveAttribute('path', 'M300,242 L536,72');
+    expect(motion).toHaveAttribute('repeatCount', 'indefinite');
+    expect(parseFloat(motion!.getAttribute('dur')!)).toBeGreaterThanOrEqual(1);
   });
-  it('holds the marker between nodes through a dropped attempt until reception', () => {
+  it('keeps the same slow loop through retries until the backend confirms reception', () => {
     const view = render(<Topology state={liveState} message={sending} events={[hop(1), { ...hop(2), kind: 'packet_dropped' }]}/>);
-    expect(screen.getByTestId('trace-packet').querySelector('[path]')).toHaveAttribute('path', 'M64,72 L182,157');
+    const packet = screen.getByTestId('trace-packet');
+    expect(packet.querySelector('[path]')).toHaveAttribute('path', 'M64,72 L300,242');
+    expect(packet.querySelector('[path]')).toHaveAttribute('repeatCount', 'indefinite');
+    view.rerender(<Topology state={liveState} message={sending} events={[hop(1), { ...hop(2), kind: 'packet_dropped' }, hop(3)]}/>);
+    expect(screen.getByTestId('trace-packet')).toBe(packet);
+    act(() => vi.advanceTimersByTime(5000));
+    expect(screen.getByTestId('trace-packet')).toBe(packet);
     view.rerender(<Topology state={liveState} message={sending} events={[hop(1), { ...hop(2), kind: 'packet_dropped' }, hop(3), { ...hop(4), kind: 'packet_rx' }]}/>);
     expect(screen.queryByTestId('trace-packet')).not.toBeInTheDocument();
   });

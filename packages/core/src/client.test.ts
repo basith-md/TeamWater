@@ -26,6 +26,70 @@ beforeEach(() => { vi.useFakeTimers(); Socket.instances = []; vi.stubGlobal('Web
 afterEach(() => { clients.forEach(c => c.dispose()); clients = []; vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('snapshot truth', () => {
+  it('resets live conversation from the returned snapshot while preserving simulator configuration', async () => {
+    const c = client(); c.start(); Socket.instances[0].receive(wire({ status: 'in_transit' }));
+    const resetSnapshot = { ...legacySnapshot, messages: {}, events: [], simulation: {
+      bit_rate: 1000, loss_rate: 0.2, range_meters: 180, playback_speed: 20, simulation_time: 0,
+      seed: 7, window_size: 5, queue_depth: 0, model: 'shared channel, store-and-forward', fec: false, distance_routing: true,
+    } } satisfies components['schemas']['MeshState'];
+    const request = vi.fn(async () => Response.json(resetSnapshot)); vi.stubGlobal('fetch', request);
+    await c.resetConversation!();
+    expect(request).toHaveBeenCalledWith('/api/simulation/reset', expect.objectContaining({ method: 'POST' }));
+    expect(c.getSnapshot().messages).toEqual({}); expect(c.getSnapshot().events).toEqual([]);
+    expect(c.getSnapshot().nodes.map(n => n.id)).toEqual(['node0', 'node4']);
+    expect(c.getSnapshot().config).toMatchObject({ bitRate: 1000, lossRate: 0.2, rangeMeters: 180, playbackSpeed: 20 });
+    expect(c.getSnapshot().routing?.distanceAware).toBe(true);
+    Socket.instances[0].receive(wire());
+    expect(c.getSnapshot().messages).toEqual({});
+  });
+
+  it('keeps history when conversation reset fails and exposes the error', async () => {
+    const c = client(); c.start(); Socket.instances[0].receive(wire());
+    vi.stubGlobal('fetch', async () => Response.json({ detail: 'Reset unavailable' }, { status: 503 }));
+    await expect(c.resetConversation!()).rejects.toThrow('Reset unavailable');
+    expect(c.getSnapshot().messages.m1).toBeDefined();
+    expect(c.getSnapshot().error).toBe('Reset unavailable');
+  });
+
+  it('ignores a reset response from a superseded endpoint', async () => {
+    let respond!: (response: Response) => void;
+    let signal!: AbortSignal;
+    vi.stubGlobal('fetch', (_url: string, options: RequestInit) => new Promise<Response>(resolve => { respond = resolve; signal = options.signal!; }));
+    const c = client(); c.start();
+    const pending = c.resetConversation!();
+    c.setMode('live', '/other'); expect(signal.aborted).toBe(true); respond(Response.json(wire()));
+    await expect(pending).rejects.toThrow(/Session changed/);
+    expect(c.getSnapshot().endpoint).toBe('/other'); expect(c.getSnapshot().messages).toEqual({});
+  });
+
+  it('allows the reset HTTP response to finish after its empty WebSocket snapshot arrives first', async () => {
+    const c = client(); c.start();
+    const previous = { ...wire({ status: 'in_transit' }), events: [packet(1, 'packet_tx', { bytes: 64 })], simulation: { simulation_time: 1 } };
+    Socket.instances[0].receive(previous);
+    let respond!: (response: Response) => void;
+    let signal!: AbortSignal;
+    vi.stubGlobal('fetch', (_url: string, options: RequestInit) => new Promise<Response>((resolve, reject) => {
+      respond = resolve; signal = options.signal!;
+      signal.addEventListener('abort', () => reject(new DOMException('signal is aborted without reason', 'AbortError')));
+    }));
+    const pending = c.resetConversation!();
+    const reset = { ...previous, messages: {}, events: [], simulation: { simulation_time: 0 } };
+    Socket.instances[0].receive(reset);
+    const abortedBySnapshot = signal.aborted;
+    const { type: _type, ...httpReset } = reset;
+    respond(Response.json(httpReset));
+    await expect(pending).resolves.toBeUndefined();
+    expect(abortedBySnapshot).toBe(false);
+    expect(c.getSnapshot().messages).toEqual({}); expect(c.getSnapshot().events).toEqual([]);
+    expect(c.getSnapshot().error).toBeNull();
+  });
+
+  it.each([null, [], { messages: {}, events: [] }])('rejects malformed reset HTTP snapshots without clearing history: %j', async body => {
+    const c = client(); c.start(); Socket.instances[0].receive(wire());
+    vi.stubGlobal('fetch', async () => Response.json(body));
+    await expect(c.resetConversation!()).rejects.toThrow('Invalid service snapshot');
+    expect(c.getSnapshot().messages.m1).toBeDefined();
+  });
   it('reports legacy delivered as ACK received, requiring integrity and a receipt for Delivered', () => {
     const c = client(); c.start(); Socket.instances[0].receive(wire());
     const message = c.getSnapshot().messages.m1;

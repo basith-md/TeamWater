@@ -26,6 +26,7 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
   const listeners = new Set<() => void>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const requests = new Set<AbortController>();
+  const controlRequests = new Set<AbortController>();
   let socket: WebSocket | null = null;
   let generation = 0; let started = false; let disposed = false; let attempts = 0; let messageSequence = 0;
   let contentGeneration = 0; let lastSequence = 0; let lastSimulationTime: number | null = null;
@@ -43,6 +44,7 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
   function cancel() {
     generation++; contentGeneration++; contentJobs.clear(); lastSequence = 0; lastSimulationTime = null;
     timers.forEach(clearTimeout); timers.clear(); requests.forEach(r => r.abort()); requests.clear();
+    controlRequests.forEach(controller => controller.abort()); controlRequests.clear();
     const old = socket; socket = null; old?.close(); attempts = 0;
   }
   async function loadText(id: string, path: string) {
@@ -207,6 +209,36 @@ export function createMeshClient(options: { mode?: Mode; endpoint?: string } = {
       if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(typeof body?.detail === 'string' ? body.detail : 'Could not move node.'); }
     },
     reset: () => { cancel(); emit(initialState(state.mode, state.endpoint, state.scenario, state.config.playbackSpeed)); if (started && state.mode === 'live') connect(); },
+    resetConversation: async () => {
+      ensureActive();
+      if (state.mode !== 'live') throw new Error('Conversation reset requires live simulation.');
+      const session = generation;
+      const controller = new AbortController(); controlRequests.add(controller);
+      let timedOut = false;
+      const deadline = setTimeout(() => { timedOut = true; controller.abort(); }, 15000); timers.add(deadline);
+      const active = () => !disposed && session === generation;
+      try {
+        const response = await fetch(`${urls(state.endpoint).http}/simulation/reset`, { method: 'POST', signal: controller.signal });
+        if (!active()) throw new Error('Session changed; reset cancelled.');
+        if (!response.ok) {
+          const body = await response.json().catch(() => null);
+          throw new Error(typeof body?.detail === 'string' ? body.detail : `Reset failed (${response.status}). Try again.`);
+        }
+        const snapshot: unknown = await response.json();
+        if (!active()) throw new Error('Session changed; reset cancelled.');
+        if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new Error('Invalid service snapshot');
+        const envelope = { ...snapshot, type: 'state' };
+        normalizeSnapshot(envelope);
+        cancel();
+        emit({ messages: {}, events: [], eventHistoryComplete: true, error: null });
+        receiveSnapshot(envelope);
+        if (started) connect();
+      } catch (error) {
+        const issue = !active() ? new Error('Session changed; reset cancelled.') : timedOut ? new Error('Reset timed out. Try again.') : error instanceof Error ? error : new Error('Reset failed. Try again.');
+        if (active()) emit({ error: issue.message });
+        throw issue;
+      } finally { clearTimeout(deadline); timers.delete(deadline); controlRequests.delete(controller); }
+    },
     sendText: async (src, dst, text) => {
       ensureActive(); if (!text.trim()) throw new Error('Enter a message.');
       if (state.mode === 'replay') return replay(src, dst, 'text', text);
