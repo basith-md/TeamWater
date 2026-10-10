@@ -80,8 +80,29 @@ def on_backend_change():
 backend.on_state_change = on_backend_change
 
 
+CONSOLE_DIST = Path(__file__).resolve().parent.parent / "apps" / "console" / "dist"
+
+
+class StripApiPrefix:
+    """Let the console's default '/api' endpoint work when served from this process."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket") and (
+            scope["path"] == "/api" or scope["path"].startswith("/api/")
+        ):
+            path = scope["path"][4:] or "/"
+            scope = {**scope, "path": path, "raw_path": path.encode()}
+        await self.inner(scope, receive, send)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
+    built = CONSOLE_DIST / "index.html"
+    if built.exists():
+        return built.read_text()
     html_path = Path(__file__).resolve().parent / "static" / "index.html"
     return html_path.read_text()
 
@@ -247,6 +268,11 @@ app.mount(
     StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
     name="static",
 )
+
+if (CONSOLE_DIST / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=str(CONSOLE_DIST / "assets")), name="assets")
+
+app.add_middleware(StripApiPrefix)
 
 
 if __name__ == "__main__":

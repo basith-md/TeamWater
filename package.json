@@ -3,6 +3,7 @@
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "dev": "npm run dev --workspace @teamwater/console",
+    "serve": "npm run build --workspace @teamwater/console && env -u PYTHONPATH .venv/bin/uvicorn service.service:app --host 0.0.0.0 --port 8000",
     "mobile": "npm run start --workspace @teamwater/mobile",
     "mobile:web": "npm run web --workspace @teamwater/mobile",
     "test": "vitest run", "test:watch": "vitest",
