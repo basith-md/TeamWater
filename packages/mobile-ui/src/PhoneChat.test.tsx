@@ -30,6 +30,57 @@ class FakeClient implements MeshClient {
 }
 
 describe('PhoneChat', () => {
+  it.each([
+    { role: 'boss' as const, name: 'Malcome', title: 'User 2', initial: 'M', contact: 'Basith', src: 'node0', dst: 'node4', ownPlace: 'Deep playa · Mayan Warrior', contactPlace: 'Playa airport' },
+    { role: 'employee' as const, name: 'Basith', title: 'User 1', initial: 'B', contact: 'Malcome', src: 'node4', dst: 'node0', ownPlace: 'Playa airport', contactPlace: 'Deep playa · Mayan Warrior' },
+  ])('shows the playa identity and routes $name messages to $contact', async ({ role, name, title, initial, contact, src, dst, ownPlace, contactPlace }) => {
+    const client = new FakeClient();
+    client.publish([message({ src: dst, dst: src, status: 'sending', received: 0 })]);
+    render(<PhoneChat client={client} role={role} conversation="playa"/>);
+    expect(screen.getByText(name)).toBeTruthy();
+    expect(screen.getByText(`/ ${title}`)).toBeTruthy();
+    expect(screen.getByText(initial)).toBeTruthy();
+    expect(screen.getByText(`${name} → ${contact}`)).toBeTruthy();
+    expect(screen.getByText(ownPlace)).toBeTruthy();
+    expect(screen.getByText(contactPlace)).toBeTruthy();
+    expect(screen.getByText(`${contact.toUpperCase()} · ${dst.toUpperCase()}`)).toBeTruthy();
+    expect(screen.getByText('Receiving…')).toBeTruthy();
+    expect(screen.queryAllByText(/Jordan|Team lead|Engineer|San Francisco/)).toHaveLength(0);
+    const composer = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+    expect(composer.placeholder).toBe(`Message ${contact}…`);
+    fireEvent.change(composer, { target: { value: `Meet me, ${contact}` } });
+    fireEvent.click(screen.getByLabelText('Send message'));
+    await waitFor(() => expect(composer.value).toBe(''));
+    expect(client.state.messages.sent).toMatchObject({ src, dst, text: `Meet me, ${contact}` });
+    expect(screen.getByText('Sending')).toBeTruthy();
+  });
+
+  it('keeps the playa direction clear while composing in compact mode', () => {
+    render(<PhoneChat client={new FakeClient()} role="boss" conversation="playa" compact/>);
+    expect(screen.getByText('Malcome → Basith')).toBeTruthy();
+    expect(screen.getByText('LIVE · Connected')).toBeTruthy();
+    expect((screen.getByLabelText('Message input') as HTMLTextAreaElement).placeholder).toBe('Message Basith…');
+  });
+
+  it('prefills the playa invitation once without overwriting later typing', () => {
+    const client = new FakeClient();
+    const view = render(<PhoneChat client={client} role="boss" conversation="playa" initialDraft="Join us at Mayan Warrior!"/>);
+    const composer = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+    expect(composer.value).toBe('Join us at Mayan Warrior!');
+    fireEvent.change(composer, { target: { value: 'My edited invitation' } });
+    view.rerender(<PhoneChat client={client} role="boss" conversation="playa" initialDraft="Replacement invitation" compact/>);
+    act(() => client.publish([message({ src: 'node4', dst: 'node0', text: 'On my way' })]));
+    expect(screen.getByLabelText('Message input')).toBe(composer);
+    expect(composer.value).toBe('My edited invitation');
+  });
+
+  it('uses a playa conversation starter without introducing the work personas', () => {
+    render(<PhoneChat client={new FakeClient()} role="boss" conversation="playa"/>);
+    expect(screen.queryAllByText(/Jordan|code|San Francisco/)).toHaveLength(0);
+    fireEvent.click(screen.getByLabelText('Use conversation starter'));
+    expect((screen.getByLabelText('Message input') as HTMLTextAreaElement).value).toMatch(/Basith.*Mayan Warrior/);
+  });
+
   it('compacts optional identity chrome while keeping the conversation and composer available', () => {
     const client = new FakeClient();
     client.publish([message({ text: 'The newest message from Alex' }), message({ id: 'reply', src: 'node4', dst: 'node0', text: 'Jordan’s reply' })]);

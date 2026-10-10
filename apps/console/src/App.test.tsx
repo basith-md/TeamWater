@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { MeshClient, MeshMessage, MeshState } from '@teamwater/core';
 import { App } from './App';
@@ -30,29 +30,90 @@ function makeClient(overrides: Partial<MeshState> = {}): MeshClient {
     start() {}, dispose() {}, setMode: (mode, endpoint) => update({ mode, endpoint: endpoint ?? state.endpoint }),
     setScenario: scenario => update({ scenario }),
     setPlaybackSpeed: playbackSpeed => update({ config: { ...state.config, playbackSpeed } }),
-    reset: () => update({ messages: {}, events: [] }), sendText: async () => 'new-message', sendMedia: async () => 'media-message',
+    reset: () => update({ messages: {}, events: [] }),
+    sendText: async (src, dst, text) => {
+      const id = `message-${Object.keys(state.messages).length + 1}`;
+      const route = src === 'node0' ? ['node0', 'node2', 'node4'] : ['node4', 'node2', 'node0'];
+      const sequence = state.events.length + 1;
+      update({ messages: { ...state.messages, [id]: { ...message(id, route), src, dst, text, preview: text, createdAt: sequence,
+        received: 2, acked: 2, integrity: 'verified', receiptConfirmed: true, status: 'delivered' } },
+        events: [...state.events, { id: `${id}-tx`, sequence, at: sequence, messageId: id,
+          kind: 'packet_tx', from: route[0], to: route[1], packetId: `${id}-packet`, bytes: 32 }] });
+      return id;
+    }, sendMedia: async () => 'media-message',
   };
 }
 
 describe('mesh console', () => {
+  it('introduces the local playa conversation and named relays without workplace identities', () => {
+    const client = makeClient();
+    const nodes = client.getSnapshot().nodes;
+    render(<App client={makeClient({ nodes: [...nodes, { id: 'node1', name: 'Bob', x: 60, y: 60, color: '#777', online: true }] })}/>);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Find your people. Across the playa.');
+    const map = within(screen.getByRole('img', { name: 'Mesh network topology' }));
+    for (const label of ['Malcome · Deep playa', 'Basith · Playa airport', 'Lucas · Relay', 'Shravanthi · Relay']) {
+      expect(map.getByText(label, { selector: 'text' })).toBeInTheDocument();
+    }
+    expect(document.body).not.toHaveTextContent(/Jordan|Alex|San Francisco|The boss|Base camp/);
+    expect(screen.getByText('Local mesh · no internet gateway')).toBeInTheDocument();
+  });
+
+  it('shows the other Burning Man people by their backend names and actual online status', () => {
+    const nodes = makeClient().getSnapshot().nodes;
+    render(<App client={makeClient({ nodes: [...nodes,
+      { id: 'node3', name: 'Dave', x: 120, y: 140, color: '#777', online: true },
+      { id: 'node5', name: 'Frank', x: 180, y: 140, color: '#777', online: true },
+    ] })}/>);
+    const map = within(screen.getByRole('img', { name: 'Mesh network topology' }));
+    expect(map.getByText('Dave · Relay', { selector: 'text' })).toBeInTheDocument();
+    expect(map.getByText('Frank · Relay', { selector: 'text' })).toBeInTheDocument();
+    expect(screen.getByText('5 / 5 nodes online')).toBeInTheDocument();
+    expect(document.querySelectorAll('.map-node.offline')).toHaveLength(0);
+  });
+
+  it('sends the invitation and reply with their actual opposing node identities and observed routes', async () => {
+    const client = makeClient({ capabilities: { packetEvents: true, controls: true, verifiedContent: true } });
+    render(<App client={client}/>);
+    const sender = within(screen.getByTestId('phone-boss'));
+    const receiver = within(screen.getByTestId('phone-employee'));
+    const invitation = 'Basith, come meet me at the Mayan Warrior set in deep playa!';
+    const reply = 'On my way from the playa airport. See you at Mayan Warrior!';
+    expect(sender.getByRole('textbox', { name: 'Message input' })).toHaveValue(invitation);
+    expect(receiver.getByRole('textbox', { name: 'Message input' })).toHaveValue(reply);
+    fireEvent.click(sender.getByRole('button', { name: 'Send message' }));
+    await waitFor(() => expect(receiver.getByText(invitation)).toBeInTheDocument());
+    expect(client.getSnapshot().messages['message-1']).toMatchObject({ src: 'node0', dst: 'node4', text: invitation });
+    expect(screen.getByLabelText('Selected route')).toHaveTextContent('node0 → node2 → node4');
+    fireEvent.click(receiver.getByRole('button', { name: 'Send message' }));
+    await waitFor(() => expect(sender.getByText(reply)).toBeInTheDocument());
+    expect(client.getSnapshot().messages['message-2']).toMatchObject({ src: 'node4', dst: 'node0', text: reply });
+    expect(screen.getByLabelText('Selected route')).toHaveTextContent('node4 → node2 → node0');
+    expect(within(screen.getByRole('table', { name: 'Packet ledger' })).getByText('message-2-packet')).toBeInTheDocument();
+  });
+
+  it('explains the configurable simulator proxy without assuming a backend port', () => {
+    render(<App client={makeClient()}/>);
+    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('/api uses the configured local simulator proxy.');
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('8000');
+  });
+
   it('shows missing live telemetry as unavailable instead of zero', () => {
     render(<App client={makeClient({ mode: 'live', connection: 'disconnected' })} />);
     for (const name of ['Bandwidth', 'Delay', 'Range', 'Packet loss']) {
       expect(within(screen.getByRole('group', { name })).getByText('Unavailable')).toBeInTheDocument();
     }
     expect(screen.getByText('Packet events unavailable')).toBeInTheDocument();
-    expect(screen.getByText('Disconnected')).toBeInTheDocument();
+    expect(screen.getAllByText('Disconnected').length).toBeGreaterThan(0);
   });
 
-  it('changes sample scenario and speed, and hides sample controls in live mode', () => {
-    render(<App client={makeClient()} />);
-    const scenario = screen.getByRole('combobox', { name: 'Replay scenario' });
-    fireEvent.change(scenario, { target: { value: 'lossy' } });
-    expect(scenario).toHaveValue('lossy');
-    const speed = screen.getByRole('combobox', { name: 'Playback speed' });
-    fireEvent.change(speed, { target: { value: '2' } });
-    expect(speed).toHaveValue('2');
-    fireEvent.click(screen.getByRole('button', { name: 'Live simulation' }));
+  it('shows a single live simulation status without source or sample controls', () => {
+    render(<App client={makeClient({ mode: 'live' })} />);
+    const status = screen.getByRole('status', { name: 'Simulation status' });
+    expect(status).toHaveTextContent('Live simulation');
+    expect(status).toHaveTextContent('Connected');
+    expect(screen.queryByRole('button', { name: 'Sample replay' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Live simulation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Replay scenario' })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Playback speed' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reset demo' })).not.toBeInTheDocument();
@@ -77,12 +138,12 @@ describe('mesh console', () => {
     expect(within(ledger).getByText('beta-01')).toBeInTheDocument();
   });
 
-  it('resets the selected route and trace together', () => {
-    render(<App client={makeClient({ messages: { alpha: message('alpha', ['node0', 'node4']) } })} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Inspect message alpha' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Reset demo' }));
-    expect(screen.getByLabelText('Selected route')).toHaveTextContent('Send a message to trace its route');
-    expect(screen.queryByRole('button', { name: 'Inspect message alpha' })).not.toBeInTheDocument();
+  it('keeps replay of actual observed packet traces available', () => {
+    render(<App client={makeClient({ mode: 'live',
+      messages: { alpha: message('alpha', ['node0', 'node2', 'node4']) },
+      events: [{ id: 'observed-tx', sequence: 1, at: 1000, messageId: 'alpha', kind: 'packet_tx', from: 'node0', to: 'node2', packetId: 'alpha-01', bytes: 32 }],
+    })}/>);
+    expect(screen.getByRole('button', { name: 'Replay selected trace' })).toBeEnabled();
   });
 
   it('keeps settings keyboard focus in the dialog and restores it on Escape', () => {

@@ -78,8 +78,8 @@ describe('observed packet trace playback', () => {
 
   it('labels endpoint identities consistently while retaining actual node IDs', () => {
     render(<Topology state={{ ...state, nodes: state.nodes.map(node => ({ ...node, name: node.id === 'node0' ? 'Alice' : node.id === 'node4' ? 'Eve' : node.name })) }} message={message} events={[]}/>);
-    expect(screen.getByText('Alex · Boss')).toBeInTheDocument();
-    expect(screen.getByText('Jordan · Burning Man')).toBeInTheDocument();
+    expect(screen.getByText('Malcome · Deep playa', { selector: 'text' })).toBeInTheDocument();
+    expect(screen.getByText('Basith · Playa airport', { selector: 'text' })).toBeInTheDocument();
     expect(screen.getByText('node0')).toBeInTheDocument();
     expect(screen.getByText('node4')).toBeInTheDocument();
   });

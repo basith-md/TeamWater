@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Activity, ArrowDownLeft, ArrowUpRight, ChevronRight, CircleHelp, Radio, RotateCcw, Settings2, ShieldCheck, Signal, Waves, X } from 'lucide-react';
 import { deliveryLabel, deriveTelemetry, useMesh } from '@teamwater/core';
-import type { MeshClient, MeshEvent, MeshMessage, MeshState, Scenario } from '@teamwater/core';
+import type { MeshClient, MeshEvent, MeshMessage, MeshState } from '@teamwater/core';
 import { PhoneChat } from '@teamwater/mobile-ui';
 import { pickBrowserMedia } from './browserMedia';
 import { VerifiedAudio } from './VerifiedAudio';
@@ -14,6 +14,10 @@ const eventLabels: Record<MeshEvent['kind'], string> = {
   packet_retry: 'Retry', chunk_ack: 'Chunk ACK', receipt_verified: 'Verified receipt', route_changed: 'Route changed', no_route: 'No route',
 };
 const connectionLabels = { connected: 'Connected', connecting: 'Connecting', disconnected: 'Disconnected', error: 'Connection error' };
+const playaNodeLabels: Record<string, string> = {
+  node0: 'Malcome · Deep playa', node1: 'Shravanthi · Relay', node2: 'Lucas · Relay',
+  node4: 'Basith · Playa airport',
+};
 
 function traceTime(at: number, createdAt: number | null | undefined, replay: boolean) {
   if (replay && createdAt == null) return '—';
@@ -66,10 +70,11 @@ export function Topology({ state, message, events }: { state: MeshState; message
       {state.nodes.map(node => {
         const point = positions.get(node.id)!;
         const endpoint = node.id === 'node0' || node.id === 'node4';
+        const label = playaNodeLabels[node.id] ?? `${node.name} · Relay`;
         return <g key={node.id} transform={`translate(${point.x},${point.y})`} className={node.online ? 'map-node' : 'map-node offline'}>
           <circle r="22" className="node-halo" /><circle r="12" className={endpoint ? 'node-point endpoint' : 'node-point'} />
           <circle r="3" fill={node.online ? '#fff' : '#92958e'} />
-          <title>{node.name}</title><text y="38" className="node-name" textAnchor="middle">{node.id === 'node0' ? 'Alex · Boss' : node.id === 'node4' ? 'Jordan · Burning Man' : node.name}</text>
+          <title>{label} · {node.id}</title><text y="38" className="node-name" textAnchor="middle">{label}</text>
           <text y="52" className="node-id" textAnchor="middle">{node.id}{!node.online ? ' · offline' : ''}</text>
         </g>;
       })}
@@ -126,14 +131,14 @@ export function App({ client }: { client: MeshClient }) {
     </header>
 
     <main id="overview">
-      <div className="page-heading"><div><div className="eyebrow">OFF-GRID COMMUNICATION / MESH EXPLORER</div><h1>A little signal.<br className="mobile-break"/> A long way.</h1><p>Two people. A few relays. Watch a message find its way across the mesh.</p></div><div className="session-tag"><Radio size={18}/><div><strong>{replay ? 'Sample replay' : 'Live simulation'}</strong><span>{replay ? 'Authored example' : 'Alex ↔ Jordan'}</span></div><span className="session-number">01</span></div></div>
+      <div className="page-heading"><div><div className="eyebrow">OFF-GRID COMMUNICATION / PLAYA MESH</div><h1>Find your people.<br className="mobile-break"/> Across the playa.</h1><p>Malcome is at Mayan Warrior in deep playa. Basith is at the playa airport. Watch their messages hop through the local mesh.</p></div><div className="session-tag"><Radio size={18}/><div><strong>Local mesh · no internet gateway</strong><span>Malcome ↔ Basith · simulated phones</span></div><span className="session-number">02</span></div></div>
       {state.error && <div className="error-banner" role="alert">{state.error}</div>}
       <div className="demo-stage">
-        <aside className="phone-column boss-phone"><div className="phone-label"><span className="participant-number">01</span><div><strong>The boss</strong><span>Base camp · node0</span></div><ArrowUpRight size={18}/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat client={client} role="boss" embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>Message source</div></aside>
+        <aside className="phone-column boss-phone" aria-label="Malcome · User 2 · Deep playa"><div className="phone-label"><span className="participant-number">02</span><div><strong>Malcome · User 2</strong><span>Deep playa · node0</span></div><ArrowUpRight size={18}/></div><div className="phone-frame" data-testid="phone-boss"><div className="phone-camera"/><PhoneChat client={client} role="boss" conversation="playa" initialDraft="Basith, come meet me at the Mayan Warrior set in deep playa!" embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>Mayan Warrior · Deep playa</div></aside>
 
         <section className="console-column" aria-label="Network console">
-          <div className="replay-toolbar"><div className="mode-toggle" role="group" aria-label="Data source"><button aria-label="Sample replay" aria-pressed={replay} onClick={() => client.setMode('replay')}>Sample replay</button><button aria-label="Live simulation" aria-pressed={!replay} onClick={() => client.setMode('live', state.endpoint)}>Live simulation</button></div>{replay && <div className="replay-selects"><select aria-label="Replay scenario" disabled={!replay} value={state.scenario} onChange={event => { setSelectedId(null); client.setScenario(event.target.value as Scenario); }}><option value="clean">Clear link</option><option value="lossy">Packet loss & retry</option><option value="outage">Relay outage</option></select><select aria-label="Playback speed" disabled={!replay} value={state.config.playbackSpeed} onChange={event => client.setPlaybackSpeed(Number(event.target.value))}><option value="0.5">0.5×</option><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select><button className="reset-button" aria-label="Reset demo" title="Reset demo" disabled={!replay} onClick={() => { setSelectedId(null); client.reset(); }}><RotateCcw size={15}/></button></div>}</div>
-          <div className="mode-note"><CircleHelp size={12}/>{replay ? 'Authored example · no messages sent to the simulator.' : 'Connected to the running mesh simulator.'}</div>
+          <div className="replay-toolbar" role="status" aria-label="Simulation status"><span className="nodes-status"><Radio size={13}/>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div>
+          <div className="mode-note"><CircleHelp size={12}/>Off-grid phones in a local mesh simulation · running simulator required.</div>
 
           <section className="topology-panel"><div className="panel-heading"><div><span className="eyebrow">THE NETWORK</span><h2>Every hop counts.</h2></div><span className="nodes-status"><i/>{state.nodes.filter(node => node.online).length} / {state.nodes.length} nodes online</span></div>
             <Topology state={state} message={selected} events={events}/>
@@ -148,10 +153,10 @@ export function App({ client }: { client: MeshClient }) {
           </section>
         </section>
 
-        <aside className="phone-column employee-phone"><div className="phone-label"><span className="participant-number">02</span><div><strong>Out on the playa</strong><span>Burning Man · node4</span></div><ArrowDownLeft size={18}/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat client={client} role="employee" embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>Message destination</div></aside>
+        <aside className="phone-column employee-phone" aria-label="Basith · User 1 · Playa airport"><div className="phone-label"><span className="participant-number">01</span><div><strong>Basith · User 1</strong><span>Playa airport · node4</span></div><ArrowDownLeft size={18}/></div><div className="phone-frame" data-testid="phone-employee"><div className="phone-camera"/><PhoneChat client={client} role="employee" conversation="playa" initialDraft="On my way from the playa airport. See you at Mayan Warrior!" embedded pickMedia={pickBrowserMedia} renderAudio={uri => <VerifiedAudio uri={uri}/>} renderVoiceRecorder={props => <VoiceRecorder {...props}/>} /></div><div className="phone-caption"><i/>Playa airport</div></aside>
       </div>
       <footer className="page-footer"><span><Waves size={14}/> BUILT TO KEEP PEOPLE CONNECTED.</span><span>TeamWater / CHRP <span className="footer-cross">+</span></span></footer>
     </main>
-    {settingsOpen && <div className="dialog-backdrop"><section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div className="dialog-heading"><h2 id="settings-title">Connection settings</h2><button className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X size={18}/></button></div><p>Use the local proxy or enter your Python service URL.</p><form onSubmit={event => { event.preventDefault(); client.setMode('live', endpoint.trim() || '/api'); setSelectedId(null); setSettingsOpen(false); }}><label htmlFor="endpoint">Backend URL</label><input id="endpoint" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder="/api"/><p className="settings-hint">/api connects through the local console proxy to port 8000.</p><button className="apply-button" type="submit">Connect to live backend<ArrowUpRight size={15}/></button></form></section></div>}
+    {settingsOpen && <div className="dialog-backdrop"><section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div className="dialog-heading"><h2 id="settings-title">Connection settings</h2><button className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X size={18}/></button></div><p>Use the local proxy or enter your simulator service URL.</p><form onSubmit={event => { event.preventDefault(); client.setMode('live', endpoint.trim() || '/api'); setSelectedId(null); setSettingsOpen(false); }}><label htmlFor="endpoint">Backend URL</label><input id="endpoint" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder="/api"/><p className="settings-hint">/api uses the configured local simulator proxy.</p><button className="apply-button" type="submit">Connect to live backend<ArrowUpRight size={15}/></button></form></section></div>}
   </div>;
 }

@@ -6,7 +6,7 @@ test('recorded browser voice reaches the other phone as playable verified audio'
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Live simulation', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('status', { name: 'Simulation status' })).toContainText('Live simulation');
   await expect(page.getByText('6 / 6 nodes online')).toBeVisible();
   const boss = page.getByTestId('phone-boss');
   const employee = page.getByTestId('phone-employee');

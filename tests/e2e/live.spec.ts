@@ -6,7 +6,6 @@ test('the console receives verified content and packet traces from the real pipe
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Live simulation', exact: true }).click();
   await expect(page.getByText('6 / 6 nodes online')).toBeVisible();
   await expect(page.getByText('Simulated Mesh Network', { exact: true })).toBeVisible();
   const boss = page.getByTestId('phone-boss');

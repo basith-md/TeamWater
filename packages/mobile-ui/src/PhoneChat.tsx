@@ -9,6 +9,8 @@ export interface VoiceRecorderProps {
 export interface PhoneChatProps {
   client: MeshClient;
   role: Role;
+  conversation?: 'playa' | 'work';
+  initialDraft?: string;
   embedded?: boolean;
   compact?: boolean;
   onComposerFocusChange?: (focused: boolean) => void;
@@ -17,15 +19,21 @@ export interface PhoneChatProps {
   renderVoiceRecorder?: (props: VoiceRecorderProps) => React.ReactNode;
 }
 const identities = {
-  boss: { name: 'Alex', title: 'Team lead', location: 'San Francisco, CA', initial: 'A', contact: 'Jordan', contactPlace: 'Burning Man · Black Rock City' },
-  employee: { name: 'Jordan', title: 'Engineer', location: 'Burning Man · Black Rock City', initial: 'J', contact: 'Alex', contactPlace: 'San Francisco, CA' },
+  work: {
+    boss: { name: 'Alex', title: 'Team lead', location: 'San Francisco, CA', initial: 'A', contact: 'Jordan', contactPlace: 'Burning Man · Black Rock City' },
+    employee: { name: 'Jordan', title: 'Engineer', location: 'Burning Man · Black Rock City', initial: 'J', contact: 'Alex', contactPlace: 'San Francisco, CA' },
+  },
+  playa: {
+    boss: { name: 'Malcome', title: 'User 2', location: 'Deep playa · Mayan Warrior', initial: 'M', contact: 'Basith', contactPlace: 'Playa airport' },
+    employee: { name: 'Basith', title: 'User 1', location: 'Playa airport', initial: 'B', contact: 'Malcome', contactPlace: 'Deep playa · Mayan Warrior' },
+  },
 };
 
-export function PhoneChat({ client, role, embedded = false, compact = false, onComposerFocusChange, pickMedia, renderAudio, renderVoiceRecorder }: PhoneChatProps) {
+export function PhoneChat({ client, role, conversation = 'work', initialDraft = '', embedded = false, compact = false, onComposerFocusChange, pickMedia, renderAudio, renderVoiceRecorder }: PhoneChatProps) {
   const { fontScale } = useWindowDimensions();
   const inputScale = Number.isFinite(fontScale) && fontScale > 1 ? fontScale : 1;
   const state = useSyncExternalStore(client.subscribe.bind(client), client.getSnapshot.bind(client), client.getSnapshot.bind(client));
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(initialDraft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sessionNumber = useRef(0);
@@ -36,7 +44,11 @@ export function PhoneChat({ client, role, embedded = false, compact = false, onC
   useEffect(() => { setBusy(false); setError(null); }, [session]);
   const draftRef = useRef(draft); draftRef.current = draft;
   const list = useRef<ScrollView>(null);
-  const identity = identities[role];
+  const identity = identities[conversation][role];
+  const emptyText = conversation === 'playa'
+    ? `You’re connected to ${identity.contact} through the mesh. Send a message to meet up on the playa.`
+    : role === 'boss' ? 'Jordan is at Burning Man. Send a message to ask for help with the code.' : 'You’re connected to Alex through the mesh. Send a reply when you’re ready.';
+  const starter = conversation === 'playa' ? 'Hey Basith — come join us at Mayan Warrior on the deep playa!' : 'Hey Jordan — I know you’re at Burning Man, but could you help fix the code when you get a signal?';
   const { src, dst } = roleNodes(role);
   const messages = Object.values(state.messages).filter(message => (message.src === src && message.dst === dst) || (message.src === dst && message.dst === src)).sort((a, b) => {
     if (a.createdAt === null) return b.createdAt === null ? a.id.localeCompare(b.id) : 1;
@@ -86,11 +98,11 @@ export function PhoneChat({ client, role, embedded = false, compact = false, onC
       <View style={styles.identityCopy}><Text style={styles.person}>{identity.name}<Text style={styles.role}> / {identity.title}</Text></Text><Text style={styles.location}>{identity.location}</Text></View>
       <Text style={styles.node}>{src.toUpperCase()}</Text>
     </View>}
-    <View style={[styles.contactRow, compact && styles.compactContactRow]}><View><Text style={[styles.contact, compact && styles.compactContact]}>{identity.contact}</Text>{!compact && <Text style={styles.contactPlace}>{identity.contactPlace}</Text>}</View><View style={styles.meshBadge}><View style={[styles.dot, state.connection !== 'connected' && styles.offlineDot]} /><Text style={styles.meshBadgeText}>{compact ? `${state.mode === 'live' ? 'LIVE' : 'SAMPLE'} · ${state.connection === 'connected' ? 'Connected' : state.connection === 'connecting' ? 'Connecting…' : 'Offline'}` : 'MESH'}</Text></View></View>
+    <View style={[styles.contactRow, compact && styles.compactContactRow]}><View style={conversation === 'playa' && styles.playaContactCopy}><Text style={[styles.contact, conversation === 'playa' && styles.playaContact, compact && styles.compactContact]}>{conversation === 'playa' ? `${identity.name} → ${identity.contact}` : identity.contact}</Text>{!compact && <Text style={styles.contactPlace}>{identity.contactPlace}</Text>}</View><View style={[styles.meshBadge, conversation === 'playa' && styles.playaMeshBadge]}><View style={[styles.dot, state.connection !== 'connected' && styles.offlineDot]} /><Text style={styles.meshBadgeText}>{compact ? `${state.mode === 'live' ? 'LIVE' : 'SAMPLE'} · ${state.connection === 'connected' ? 'Connected' : state.connection === 'connecting' ? 'Connecting…' : 'Offline'}` : 'MESH'}</Text></View></View>
     {!compact && <View style={styles.modeRow}><Text style={styles.modeLabel}>{state.mode === 'replay' ? 'Sample replay · example messages' : 'Live simulation'}</Text><Text style={styles.connection}>{state.connection === 'connected' ? 'Connected' : state.connection === 'connecting' ? 'Connecting…' : 'Offline'}</Text></View>}
     <ScrollView ref={list} style={styles.messages} contentContainerStyle={[styles.messageContent, compact && styles.compactMessageContent]} onLayout={() => list.current?.scrollToEnd({ animated: false })} onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
       {!compact && <View style={styles.dayRow}><View style={styles.dayLine}/><Text style={styles.day}>OFF THE GRID. STILL IN SYNC.</Text><View style={styles.dayLine}/></View>}
-      {messages.length === 0 && <View style={[styles.empty, compact && styles.compactEmpty]}><Text style={styles.emptyTitle}>A signal through the dust.</Text><Text style={styles.emptyText}>{role === 'boss' ? 'Jordan is at Burning Man. Send a message to ask for help with the code.' : 'You’re connected to Alex through the mesh. Send a reply when you’re ready.'}</Text>{role === 'boss' && <Pressable accessibilityRole="button" accessibilityLabel="Use conversation starter" style={styles.starter} onPress={() => setDraft('Hey Jordan — I know you’re at Burning Man, but could you help fix the code when you get a signal?')}><Text style={styles.starterText}>Use conversation starter ↗</Text></Pressable>}</View>}
+      {messages.length === 0 && <View style={[styles.empty, compact && styles.compactEmpty]}><Text style={styles.emptyTitle}>A signal through the dust.</Text><Text style={styles.emptyText}>{emptyText}</Text>{role === 'boss' && <Pressable accessibilityRole="button" accessibilityLabel="Use conversation starter" style={styles.starter} onPress={() => setDraft(starter)}><Text style={styles.starterText}>Use conversation starter ↗</Text></Pressable>}</View>}
       {messages.map(message => <MessageBubble key={message.id} message={message} outgoing={message.src === src} mode={state.mode} sender={message.src === src ? identity.name : identity.contact} renderAudio={renderAudio} />)}
     </ScrollView>
     {(error || state.error) && <View accessibilityRole="alert" style={styles.error}><Text style={styles.errorText}>{error || state.error}</Text></View>}
@@ -127,6 +139,7 @@ function MessageBubble({ message, outgoing, mode, sender, renderAudio }: { messa
 }
 
 const styles = StyleSheet.create({
+  playaContactCopy: { flex: 1, minWidth: 0, marginRight: 8 }, playaContact: { fontSize: 20, flexShrink: 1 }, playaMeshBadge: { flexShrink: 0 },
   phone: { flex: 1, flexShrink: 1, minHeight: 0, backgroundColor: '#faf8f3', overflow: 'hidden' }, embedded: { minHeight: 620 },
   compactContactRow: { paddingHorizontal: 12, paddingVertical: 7, borderBottomWidth: 1, borderColor: '#e9e5dc' }, compactContact: { fontSize: 16 }, compactMessageContent: { padding: 10, gap: 12 }, compactEmpty: { paddingVertical: 10 }, compactComposeArea: { paddingHorizontal: 10, paddingVertical: 8 },
   identity: { padding: 19, backgroundColor: '#232825', flexDirection: 'row', alignItems: 'center', gap: 10 }, avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#e96f34', alignItems: 'center', justifyContent: 'center' }, avatarText: { fontSize: 16, fontWeight: '700', color: '#fff' }, identityCopy: { flex: 1 }, person: { color: '#fff', fontSize: 14, fontWeight: '700' }, role: { fontSize: 10, fontWeight: '400', color: '#bbbfb8' }, location: { color: '#b6bbb3', fontSize: 10, marginTop: 5 }, node: { color: '#d4b99d', fontSize: 9, letterSpacing: 1 },
