@@ -255,6 +255,8 @@ describe('mesh console', () => {
     fireEvent.click(trigger);
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Left phone node' }));
+    expect(within(screen.getByRole('listbox', { name: 'Left phone node options' })).getByRole('option', { name: 'Basith (node4)' })).toBeDisabled();
   });
 
   it('reports route verification from proof data without inventing a Dijkstra check', () => {

@@ -74,3 +74,12 @@ only the console on port 5173 and recording backend on port 8003 need to run.
 
 The remote boss → gate → Jordan coding workflow is separate and not part of
 this completed meetup scene.
+
+## Optional AI walkthrough
+
+The merged Water AI tab is separate from **Play demo**. Select an internet node,
+open **Water AI** on a phone, and ask “What does FAILED mean?” Follow the sealed
+question to the gateway and the answer back through the mesh. The default local
+mock provider needs no external AI service. Real Nicrron answers and optional
+PRISM tracing require explicit configuration; see [README.md](../README.md#water-ai).
+This is a question-and-answer workflow, not the proposed Ninoo coding workflow.

@@ -21,7 +21,8 @@ INJECTION = [
     r"</?(system|assistant)>",
 ]
 SECRETS = [r"sk-[A-Za-z0-9_-]{16,}", r"(?i)api[_-]?key\s*[:=]\s*\S{8,}"]
-STOP = set("the a an of to in is it and or for on at be do how what when where why i my me we can you are with".split())
+STOP = set("the a an of to in is it and or for on at be do does did how what whats when where why which who i my me we can you are with "
+           "mean means meaning tell explain about this that there your our was were will would should could has have get".split())
 
 
 @dataclass

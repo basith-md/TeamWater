@@ -1,110 +1,54 @@
-# Mobile app and packet console
+# Phone UI and packet console
 
-The frontend has two entry points and one shared phone UI:
+The current demo runs locally in `apps/console`: Malcome's phone on the left, the simulated mesh and ledger in the center, and Basith's phone on the right. Malcome is at Mayan Warrior in deep playa; Basith is at the playa airport. Lucas, Shravanthi, Dave, and Frank relay traffic. The recording topology spans 2.8 km and requires at least four hops between the phones.
 
-- `apps/mobile`: Expo app for iOS, Android and web. Select Boss or Employee in the app settings.
-- `apps/console`: browser stage with the boss phone on the left, mesh inspector in the center and employee phone on the right.
-- `packages/mobile-ui`: the React Native phone component used by both entry points.
-- `packages/core`: state, HTTP/WebSocket transport, deterministic frontend replay fixtures and telemetry selectors.
+`packages/mobile-ui` provides the shared React Native phone components. `packages/core` owns HTTP/WebSocket transport, state normalization, and telemetry. API adapters consume generated types from `shared/typescript/api.ts`, which is generated from OpenAPI 1.3. Change the schema and run `./generate-types.sh` to update the shared contract.
 
-The live adapter imports `components` and `operations` directly from the backend team's generated `shared/typescript/api.ts`. The generated files remain unchanged. The OpenAPI 1.1 schema and regenerated Python/TypeScript models are synchronized from the team’s `packet-media-pipeline` commit `554957a`; the frontend consumes those published fields directly and retains compatibility with older snapshots.
+## Local recording demo
 
-The boss maps to `node0`; the employee at Burning Man maps to `node4`. These are presentation identities; the current backend still calls those nodes Alice and Eve.
+Follow the setup commands in [README.md](README.md) and the [recording guide](docs/RECORDING.md). The console is at http://localhost:5173, with the backend on port 8003. Set `TEAMWATER_BACKEND_URL=http://127.0.0.1:8003` when starting Vite; its `/api` and `/connect` proxies otherwise target port 8000. WebSocket traffic uses the same backend.
 
-## Start the browser demo
+There is one simulator mode in the console. **Play demo** resets the conversation, types each message character by character, and waits for delivery before replying. **Reset demo** stops playback and clears the conversation, drafts, transfers, and ledger. There are no preloaded conversation messages.
 
-Requires Node.js 22.22 or later and npm.
+The graph uses backend node positions and connectivity. The small packet marker repeats a leg slowly while that transmission remains active, then advances when observed events confirm progress. Live status, routes, and metrics come from the same snapshots and events as the ledger. **Replay trace** allows inspection of observed history; its visual pacing is separate from the backend timestamps used for latency. Node dragging and routing controls change the real simulated topology.
 
-```sh
-npm ci
-npm run dev
-```
+The multiline composer grows with its text. In the phone UI, incoming progress is labeled receiving. Sender **Delivered** requires destination verification and a terminal receipt; the receiver can have verified content while the sender still awaits that receipt. Missing measurements are unavailable, not zero.
 
-Open http://localhost:5173. **Live simulation** is the default: messages travel through the running Python mesh simulator. **Sample replay** works without Python and plays authored examples of clear links, losses and relay outages. Its timings and metrics are sample data. Both views are labeled **Simulated Mesh Network**; the mode describes the source of the data.
+## Voice and media
 
-The console queues observed packet transmissions into a readable hop animation. Animation speed is presentation timing; the ledger retains backend simulation timestamps and delivery status updates immediately. Use **Replay trace** to inspect an observed trace again. The animation queue is bounded to 200 hops and discloses any overflow.
+**Record voice** asks for microphone permission, records up to five seconds, then offers playback, send, and discard. Failed uploads retain the clip for retry. Browser recording needs HTTPS or localhost. Image and audio file pickers use the same mesh transport.
 
-## Connect to the Python backend
+The current backend encodes voice with Codec2 at 1,200 bps and returns verified receiver audio as mono 8 kHz WAV. FFmpeg and the native Codec2 library are required. Rendered text, images, and audio come from verified recovered content, not the sender's preview. See the recording guide for installation and testing.
 
-From the repo root, in a separate terminal:
+## Water AI
 
-```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python service/service.py
-```
+The console phones offer a **Water AI** tab alongside Chat. Choose the internet node in the console, select a model, and ask a question of at most 400 UTF-8 bytes. Request stages show waiting for a gateway, transmitting the question, provider work, returning the answer, and completion or failure. AI packet transfers also appear in the mesh and ledger.
 
-Leave the console in **Live simulation**. Use `/api` for the local Vite proxy; it forwards HTTP and WebSocket requests to `http://127.0.0.1:8000`. The proxy runs only in the development server. A production deployment needs the same reverse proxy or explicit backend CORS support.
+The setup link follows the configured backend endpoint. Request and model-list responses are scoped to that endpoint/session; switching endpoints or resetting cannot restore stale AI content. AI input and controls are disabled during scripted playback and reset. A submitted response does not clear a newer draft.
 
-The frontend supports both the service on `main` and the newer `packet-media-pipeline` branch. Main reports aggregate progress and the latest route; the branch adds real packet events, verification, recovered content, and radio-byte counters. The latest branch reports configured radio range, packet loss counters, and delay to receiver verification. Older service versions omit these measurements and the UI explains each unavailable value. See [the integration contract](docs/frontend-backend-contract.md).
+The default provider is a local mock. See [Water AI configuration and data handling](README.md#water-ai) before enabling Nicrron or PRISM. The optional AI workflow is independent of the Malcome/Basith meetup script. It answers questions; it does not implement Ninoo code generation, PR creation, or app deployment.
 
-To point the development proxy at a different running backend, restart Vite with its URL:
+## Retained mobile and coding-workspace source
 
-```sh
-TEAMWATER_BACKEND_URL=http://127.0.0.1:8001 npm run dev
-```
+`apps/mobile` retains the Expo client, and `apps/team-preview` retains the retired preview source. There is no active hosted team preview or Expo service required for this demo. Native clients cannot use Vite's relative `/api` proxy: they need a reachable backend URL configured in their settings. Do not reuse old published links as a launch path for this local version.
 
-## Run Expo
+If native development resumes, verify current official App Store and Google Play Expo Go compatibility before changing the pinned SDK or publishing. Align dependencies, run Expo checks and both platform exports, and test the actual phones before sharing a launch link. Browser verification does not establish physical-device microphone or keyboard behavior.
 
-```sh
-npm run mobile
-```
+`CodeWorkspace` and `JordanWorkspace` remain separate components with tests. They are not wired into the recording demo and do not execute Ninoo workflows.
 
-Use Expo's `i` key to open iOS, `a` for Android, or run `npm run mobile:web` for the web entry. Two simulators can open the same Metro URL. Select Boss on one and Employee on the other; select Live simulation on both so they share the same Python process.
-
-Use `http://127.0.0.1:8000` from iOS Simulator, `http://10.0.2.2:8000` from an Android emulator, or the computer's LAN IP from a physical phone. A phone's own `localhost` is not the computer. The endpoint can be edited in app settings. Separate Expo clients in replay mode each have their own independent fixture session.
-
-**Record voice** asks for microphone permission, records up to five seconds, then offers playback, Send voice and Discard. A failed upload retains the clip for retry. Changing phone/session or backgrounding an active recording cancels it. Browser recording requires HTTPS or localhost. Image and audio file selection also uses the system document picker; the browser console supports file selection. On `packet-media-pipeline`, verified images render from the recovered content endpoint, and audio uses browser controls or `expo-audio` in native clients. Playback errors are shown inline. A generated recording was transported through the real packet/media backend, verified and decoded as five-second Ogg/Opus audio. The iOS 26.5 simulator reports the recovered stream playable through AVFoundation; physical iPhone/Android microphone and speaker behavior still requires device testing. See [voice verification](docs/implementation/voice.md). Main's older service does not provide recovered media content, so the UI labels it unavailable.
-
-Launch links can select each phone's role and endpoint, for example `exp://127.0.0.1:8081/--/?role=employee&mode=live&endpoint=http%3A%2F%2F127.0.0.1%3A8001`. Select Boss/Playa in the app to change roles without restarting.
-
-## Local demo only
-
-The shared Cloudflare preview was retired on October 10, 2026. Its Worker was removed and its backend and tunnel were stopped. Expo development services were also stopped. The source is retained for reference; there is no active hosted team preview.
-
-Use http://localhost:5173 for the recording demo, with the mesh backend on port 8003. See [recording instructions](docs/RECORDING.md). Only those two processes need to run.
-
-Native and mobile-web chat compact their headers while typing, preserve the draft and recorder, and reserve the remaining viewport for messages. A Done button dismisses the keyboard. Physical-device keyboard geometry still needs confirmation; automated tests cover focus, draft preservation, and keyboard events.
-
-## Archived Expo Go setup (not used for the demo)
-
-The EAS project is [ravejedii/teamwater](https://expo.dev/accounts/ravejedii/projects/teamwater). The latest native keyboard fix was published from commit `0640c52` for iOS and Android, SDK 57, update group `e9ccb226-e494-41d2-9cad-5a1e779b7399`. The account dashboard URL is administrative, not an app launcher. Published Expo Go previews require Expo sign-in and ownership or membership of the project's owning organization; a QR code does not grant access. The hosted team preview has been retired; use the local console for this demo. See [Expo's published-project access rules](https://expo.dev/changelog/expo-go-loading-changes-may-2026).
-
-With compatible Expo Go already installed, [open the app directly](exp://u.expo.dev/12bc6cfe-8f05-43f8-8381-14401575cff8/group/e9ccb226-e494-41d2-9cad-5a1e779b7399), or [scan the Expo Go QR code](https://qr.expo.dev/eas-update?projectId=12bc6cfe-8f05-43f8-8381-14401575cff8&groupId=e9ccb226-e494-41d2-9cad-5a1e779b7399) from another screen. Some chat browsers do not open `exp://` links; use the HTTPS preview launcher in Safari or Chrome in that case. Current store Expo Go supports SDK 57; verify the installed version against [the official release announcement](https://expo.dev/changelog/expo-go-57-login). An older troubleshooting page incorrectly described the store as SDK 54-only; do not downgrade this project based on that page. The published preview uses `EXPO_PUBLIC_BACKEND_URL` from the EAS **preview** environment and starts in live mode. Choose **Boss / node0** on one phone and **Playa / node4** on the other. These are two shared demo identities, not individual teammate accounts.
-
-The former preview backend and temporary HTTPS Cloudflare tunnel are stopped. The following setup notes are historical. The Mac, Python service and tunnel must remain running. If that tunnel is replaced, update the public backend URL in EAS and publish again, or enter the replacement URL in the app's Settings. This is a device-testing setup, not a permanent backend deployment. No backend credentials are embedded in the app.
-
-To publish an update from `apps/mobile`:
-
-```sh
-cd ../..
-npm run publish:preview -- --message "Describe the change"
-```
-
-For local development, copy `apps/mobile/.env.example` to `.env.local`, set `EXPO_PUBLIC_BACKEND_URL` to a phone-reachable backend, then run `npm run mobile` from the root. Without a valid configured URL, a local Expo session starts in sample replay. The console's local `/api` proxy is not available to native phones.
-
-## Verify
+## Verification
 
 ```sh
 npm test
 npm run typecheck
 npm run build
-npm run test:e2e
-npm run test:live # requires main's Python service on port 8000
-TEAMWATER_PIPELINE_URL=http://127.0.0.1:8001 npm run test:pipeline
-# Real five-second voice transfer (~2 minutes):
-TEAMWATER_PIPELINE_URL=http://127.0.0.1:8001 npx vitest run tests/integration/voice-backend.test.ts
-cd apps/mobile
-npx expo install --check
-npx expo export --platform all
 ```
 
-Browser tests use a visible Chrome window. The test suite covers message routing, failed-send drafts, partial and ACK-only states, verified receipt gates, replay drops/retries, endpoint changes and unavailable telemetry. TDD observations are recorded in `docs/implementation/`.
+These cover transport/session behavior, sender and receiver status, draft preservation, AI controls, and playback/reset. Live-backend integration tests require a separately running service:
 
-## Delivery wording
+```sh
+TEAMWATER_PIPELINE_URL=http://127.0.0.1:8003 npm run test:pipeline
+npm run demo:record
+```
 
-`Delivered` requires destination integrity verification **and** a terminal receipt at the sender. Main's `delivered` field only confirms chunk ACKs; the frontend displays **ACK received** and explicitly says verification is unavailable. With the newer branch, the receiver can read verified content while the sender still shows **receipt pending** or **receipt unconfirmed**. Full text is fetched from the recovered content endpoint, never reconstructed from its truncated preview. Missing measurements are displayed as unavailable rather than zero.
-
-## Coding workspace status
-
-The shared `CodeWorkspace` and `JordanWorkspace` components and their tests are available for review. They are not wired into the deployed app yet. They support honest externally supplied workflow state for prototype and bug-fix paths; no Ninoo execution, PR creation, or deployment completion is simulated or claimed by this preview.
+Browser rehearsals run visibly. The local demo backend should be stopped after the session if no longer needed.

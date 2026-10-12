@@ -1,139 +1,84 @@
-# CHRP Mesh — Backend + Service
-**Backend (live):** [https://teamwater.onrender.com](https://teamwater.onrender.com)
+# Water Connect
 
+A local mesh-network simulator, React phone UI, packet console, and optional AI gateway. The recording demo follows Malcome inviting Basith from the playa airport to Mayan Warrior in deep playa. Six simulated nodes run in one Python process; messages cross at least four radio hops in the recording topology.
 
-The Expo mobile app and browser packet console are documented in [FRONTEND.md](FRONTEND.md). Run `npm ci` and `npm run dev` from this repo root to open the interactive three-panel demo at http://localhost:5173.
+The demo runs locally. The former shared preview is retired. Expo source remains in the repository but is not needed for the browser demo.
 
-**Live Demo:** [https://zippy-ivory-8b5yt2y.vercel.app/](https://zippy-ivory-8b5yt2y.vercel.app/)  
-(Static frontend of the iPhone-style mesh UI. The full FastAPI + WebSocket backend runs separately.)
+## Run locally
 
-The backend is in its own directory so other services can use it independently.
+Use Python 3.11+ and Node.js 22.22+. From the repository root:
 
-## Shared Types (OpenAPI)
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm ci
+```
 
-**Single source of truth:** `openapi.yaml`
+Start the recording backend in one terminal:
 
-Generated types live in:
-- `shared/python/models.py` (Pydantic)
-- `shared/typescript/api.ts`
+```sh
+env -u PYTHONPATH AI_PROVIDER=mock PRISM_API_KEY= PRISM_PROJECT_ID= .venv/bin/python -m uvicorn deployment.playa_demo:app --host 127.0.0.1 --port 8003
+```
 
-**GUARD: Do not edit the generated files.**  
-Agents and teammates must only modify `openapi.yaml`, then run:
+Start the console in another:
 
-```bash
+```sh
+TEAMWATER_BACKEND_URL=http://127.0.0.1:8003 npm run dev -- --port 5173 --strictPort
+```
+
+Open http://localhost:5173. **Play demo** clears the conversation, types the invitation and reply character by character, and waits for verified delivery. **Reset demo** clears phones, transfers, and the ledger while preserving node positions and radio settings. Stop each process with Ctrl+C when finished.
+
+For a separate terminal view of the same packet events, run `npm run demo:ledger`. It observes the existing backend; it does not start more nodes. See [recording instructions](docs/RECORDING.md) for the route, controls, and voice requirements.
+
+Text works without media tools. Voice uses Codec2 at 1,200 bps and decodes to WAV at the receiver. It requires FFmpeg and the Codec2 shared library in addition to the Python requirements (`brew install ffmpeg codec2` on macOS). Recordings are limited to five seconds. This is a software network simulation, not a physical radio implementation.
+
+## Water AI
+
+Each console phone has **Chat** and **Water AI** tabs. Select an **Internet node**, then ask a short question such as “What does FAILED mean?” The question is sealed, transmitted over the mesh to the gateway, answered through Water Connect, and sent back over the mesh. The console shows request stages and the actual packet transfers. With no reachable internet node, requests wait for one.
+
+The default `AI_PROVIDER=mock` uses a local test provider. It proves the transport and UI flow without calling a real model. For real answers, copy `connect/.env.example` to `connect/.env`, set `AI_PROVIDER=nicrron` and `NICRRON_API_KEY`, and restart the backend without the `AI_PROVIDER=mock` override above. The file documents optional PRISM tracing, evaluation, and knowledge-base settings. Remove the blank PRISM environment overrides only when you intend to enable that integration.
+
+The setup portal is at http://localhost:5173/connect. Local demo mode seeds one shared account (`team@water.demo`, password `teamwater`) and enrolls the six simulated phones. Keep demo mode local. With `WATER_DEMO=0`, startup requires a private `WATER_SESSION_SECRET` and `WATER_MASTER_KEY`. Generate them separately and save them in the ignored `connect/.env` file:
+
+```sh
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+python3 -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'
+```
+
+The first value is the session secret; the second is the master key. Keep the master key stable so previously enrolled device keys remain readable.
+
+Relay API responses contain sealed answers and non-plaintext metadata. Water Connect decrypts requests to call the provider, and authorized group members can view questions and answers in its trust log. Configured PRISM tracing also receives that content. The local simulator holds every simulated device's state and keys; it is not a security boundary between real phones. Reset cancels the local AI workflow but cannot undo a provider call that has already started.
+
+Grounded replies include field-guide sources; uncovered questions may receive a labeled general answer when `REQUIRE_GROUNDING=0`. Set it to `1` for field-guide-only replies. Budgets count actual provider calls, including a fallback call. Retries reuse request IDs to retrieve cached answers. To publish local reference facts to a configured PRISM knowledge base, run `.venv/bin/python -m connect.kb_sync`. This replaces matching field-guide documents; removing a local fact does not automatically delete its remote copy.
+
+## Repository and shared contracts
+
+| Path | Responsibility |
+| --- | --- |
+| `backend/` | Mesh routing, packet transport, media codecs, receiver verification |
+| `service/` | HTTP/WebSocket API and mesh-to-AI gateway |
+| `connect/` | Enrollment, groups, signed relay API, provider calls, budgets, trust log |
+| `deployment/playa_demo.py` | Local recording topology and node identities |
+| `apps/console/` | Two phones, live topology, metrics, packet ledger, demo playback |
+| `apps/mobile/` | Retained Expo client |
+| `packages/core/` | Shared state, API client, telemetry and contract adapters |
+| `packages/mobile-ui/` | Shared chat, recording, and AI UI |
+
+`openapi.yaml` is the contract source of truth (version 1.3), including AI controls, state, and Connect JSON APIs. Edit it and regenerate both languages:
+
+```sh
 ./generate-types.sh
 ```
 
-See `shared/DO_NOT_EDIT.md` for the full rule.
+Do not edit `shared/python/models.py` or `shared/typescript/api.ts` directly. See [the generated-file rule](shared/DO_NOT_EDIT.md), [frontend notes](FRONTEND.md), and [packet/media details](docs/PACKET_MEDIA_HANDOFF.md).
 
-## Architecture
+## Verify
 
-```mermaid
-flowchart TD
-    subgraph Clients
-        Console[Browser Console<br/>apps/console]
-        Mobile[Expo Mobile App<br/>apps/mobile]
-        Preview[Team Preview<br/>apps/team-preview]
-    end
-
-    subgraph Shared Frontend
-        Core[packages/core<br/>HTTP / WebSocket client<br/>state + telemetry]
-        MobileUI[packages/mobile-ui<br/>Shared phone UI]
-    end
-
-    subgraph Service
-        API[FastAPI Service<br/>service/service.py]
-        WS[WebSocket /ws]
-        Static[Static Demo UI]
-    end
-
-    subgraph Backend
-        MB[MeshBackend<br/>mesh_backend.py]
-        Media[Media Codecs<br/>media.py]
-        Packets[Packet Framing<br/>packets.py]
-        Reassembly[Chunk Reassembly<br/>reassembly.py]
-    end
-
-    subgraph Types
-        OpenAPI[openapi.yaml<br/>source of truth]
-        SharedPy[shared/python/models.py]
-        SharedTs[shared/typescript/api.ts]
-    end
-
-    Console --> Core
-    Mobile --> MobileUI
-    Mobile --> Core
-    Preview --> Core
-    Core -->|HTTP / WS| API
-    API --> MB
-    API -->|broadcast| WS
-    MB --> Media
-    MB --> Packets
-    MB --> Reassembly
-    OpenAPI --> SharedPy
-    OpenAPI --> SharedTs
-    Core -.->|uses generated types| SharedTs
-    API -.->|uses generated types| SharedPy
+```sh
+env -u PYTHONPATH AI_PROVIDER=mock PRISM_API_KEY= PRISM_PROJECT_ID= .venv/bin/python -m unittest discover -s tests
+npm test
+npm run typecheck
+npm run build
 ```
 
-## Structure
-
-```
-chrp_mesh/
-├── backend/
-│   └── mesh_backend.py
-├── service/
-│   ├── service.py
-│   └── static/
-│       └── index.html
-├── shared/
-│   ├── DO_NOT_EDIT.md
-│   ├── python/models.py      # generated
-│   └── typescript/api.ts     # generated
-├── openapi.yaml              # source of truth
-├── generate-types.sh
-├── requirements.txt
-└── README.md
-```
-
-## Using the backend from another service
-
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path("path/to/chrp_mesh/backend").resolve()))
-
-from mesh_backend import MeshBackend
-import asyncio
-
-async def main():
-    backend = MeshBackend()
-    msg_id = await backend.send_message(
-        src="node0",
-        dst="node4",
-        data=b"Hello from another service",
-        media_type="text",
-        preview="Hello...",
-    )
-    await asyncio.sleep(10)
-    print(backend.get_state()["messages"][msg_id])
-
-asyncio.run(main())
-```
-
-## Run the demo service
-
-```bash
-cd chrp_mesh/service
-pip install -r ../requirements.txt
-python service.py
-```
-
-Open http://localhost:8000
-
-The service automatically finds the backend in the sibling `backend/` directory.
-The Expo mobile app and browser packet console are documented in [FRONTEND.md](FRONTEND.md). Run `npm ci` and `npm run dev` from this repo root to open the interactive three-panel demo at http://localhost:5173.
-
-## Packet/media implementation
-
-See [packet/media handoff](docs/PACKET_MEDIA_HANDOFF.md) for the implemented protocol, codec requirements, test commands, current limits and AI gateway integration plan. The backend is now Python rather than the original PRD's proposed TypeScript architecture. Voice is encoded with FFmpeg/libopus; it is no longer a truncated upload. Run from the repository root with `python -m uvicorn service.service:app --host 127.0.0.1 --port 8000`.
+The AI tests use temporary databases and mocked providers. They do not verify real Nicrron credentials, model availability, or PRISM delivery. Optional live-service frontend tests are skipped unless their backend URL is configured. With the local demo running, `npm run demo:record` rehearses Play/Reset in a visible browser; start Loom separately to record it.

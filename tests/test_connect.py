@@ -548,3 +548,12 @@ class ConfigSecretTests(unittest.TestCase):
         self.assertFalse(settings.demo_account)
         self.assertEqual(settings.master_key, b"k" * 32)
         self.assertTrue(self.settings({}).demo_account)
+
+
+class GroundingVocabularyTests(unittest.TestCase):
+    def test_question_words_do_not_dilute_the_key_term(self):
+        from connect.pipeline import KnowledgeBase, tokens
+        kb = KnowledgeBase(Settings().kb_dir)
+        self.assertEqual(tokens("What does FAILED mean?"), {"failed"})
+        self.assertTrue(any("FAILED" in h["text"] for h in kb.search("What does FAILED mean?")))
+        self.assertEqual(kb.search("how do I bake bread"), [])
