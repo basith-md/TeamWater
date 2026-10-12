@@ -557,3 +557,43 @@ class GroundingVocabularyTests(unittest.TestCase):
         self.assertEqual(tokens("What does FAILED mean?"), {"failed"})
         self.assertTrue(any("FAILED" in h["text"] for h in kb.search("What does FAILED mean?")))
         self.assertEqual(kb.search("how do I bake bread"), [])
+
+
+class PhoneModuleVectorTests(unittest.TestCase):
+    """shippable/water-ai is tested against test-vectors.json; this keeps that file honest."""
+
+    def test_committed_vectors_match_the_server_wire_format(self):
+        import json
+        from connect import vectors
+        committed = json.loads(vectors.OUT.read_text(encoding="utf-8"))
+        self.assertEqual(committed, vectors.build(), "Wire format changed: run `python -m connect.vectors` and update the phone module")
+
+    def test_server_opens_what_the_vectors_say_a_phone_sends(self):
+        import json
+        from connect import vectors
+        v = json.loads(vectors.OUT.read_text(encoding="utf-8"))
+        frame = bytes.fromhex(v["request_frame_hex"])
+        plain = security.unseal(bytes.fromhex(v["key_hex"]), v["request_id"], v["device_id"], frame[20:], b"Q")
+        self.assertEqual((plain[0], plain[1:].decode()), (v["model_index"], v["question"]))
+
+
+class RelayHardeningTests(ConnectTests):
+    def test_stale_or_future_timestamp_is_refused(self):
+        asker, gw, _ = self.two_phones()
+        rid = str(uuid.uuid4())
+        body = json.dumps({"request_id": rid, "device_id": asker[0],
+                           "sealed": security.b64e(security.seal(asker[1], rid, asker[0], b"\x00hi"))}).encode()
+        for ts in (str(time.time() - 600), str(time.time() + 600), "not-a-number"):
+            r = TestClient(self.app).post("/v1/relay", content=body, headers={
+                "X-Device-Id": str(gw[0]), "X-Timestamp": ts, "X-Signature": security.sign(gw[1], ts, body)})
+            self.assertEqual(r.status_code, 401, ts)
+        self.assertEqual(self.provider.calls, [])
+
+    def test_request_id_cannot_be_hijacked_by_another_device(self):
+        asker, gw, gid = self.two_phones()
+        other = self.connect_device(self.web, gid)
+        rid, first = self.ask(gw, asker, "How fast is the Long Fast preset?")
+        sealed = security.seal(other[1], rid, other[0], b"\x00How fast is Short Turbo?")
+        r = self.relay(gw, rid, other[0], sealed)
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(len(self.provider.calls), 1)

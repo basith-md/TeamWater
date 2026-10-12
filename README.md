@@ -8,11 +8,19 @@ The demo runs locally. The former shared preview is retired. Expo source remains
 
 Use Python 3.11+ and Node.js 22.22+. From the repository root:
 
+<<<<<<< HEAD
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 npm ci
 ```
+=======
+## Shippable phone module
+
+[`shippable/`](shippable/) holds the code meant for real phones: [`shippable/water-ai`](shippable/water-ai/) is the phone side of Water AI (setup, sealed questions over the mesh, gateway relay), byte-compatible with Water Connect in [`connect/`](connect/). Start with [`shippable/README.md`](shippable/README.md).
+
+## Shared Types (OpenAPI)
+>>>>>>> e821229e9e2cabe0b87d26c2919af8dccc91de3e
 
 Start the recording backend in one terminal:
 

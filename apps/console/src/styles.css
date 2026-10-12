@@ -94,3 +94,6 @@ main{padding-top:14px}
 .model-select { display: flex; align-items: center; gap: 6px; font-family: 'DM Sans', Arial, sans-serif; font-size: 10px; color: #888371; min-width: 0; flex: 1; }
 .model-select select { flex: 1; min-width: 0; font-size: 10px; padding: 4px 6px; border: 1px solid #ded8cc; border-radius: 6px; background: #fffcf7; color: #3f463d; }
 .topbar nav a svg { margin-left: 3px; }
+
+/* Phone width: the top bar keeps its demo controls as icon-only buttons (labels stay in aria-label). */
+@media(max-width:620px){.topbar-right{gap:8px;min-width:0}.topbar-right .connection{font-size:0;gap:0}.reset-demo-button{font-size:0;gap:0;padding:7px}}
