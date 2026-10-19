@@ -305,7 +305,6 @@ export function App({ client }: { client: MeshClient }) {
     </header>
 
     <main id="overview">
-      <div className="page-heading"><div><h1>Message Your People At Burning Man Without Cell Service</h1><p>Malcome is at Mayan Warrior in deep playa. Basith is at the playa airport. Watch their messages hop through the local mesh.</p></div></div>
       {(demo.error ?? resetError ?? state.error) && <div className="error-banner" role="alert">{demo.error ?? resetError ?? state.error}</div>}
       {demo.stage && <div role="status" aria-label="Demo playback">{demo.stage}</div>}
       <PairPicker disabled={demo.playing || resetting} nodes={state.nodes.length ? state.nodes : [{ id: 'node0' }, { id: 'node4' }]} a={leftId} b={rightId} setA={setLeftId} setB={setRightId} status={<div className="pair-status" role="status" aria-label="Simulation status"><span>Live simulation</span><span className={`connection ${state.connection}`}><i/>{connectionLabels[state.connection]}</span></div>}

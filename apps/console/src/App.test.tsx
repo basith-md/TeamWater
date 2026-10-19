@@ -272,7 +272,6 @@ describe('mesh console', () => {
     const client = makeClient();
     const nodes = client.getSnapshot().nodes;
     render(<App client={makeClient({ nodes: [...nodes, { id: 'node1', name: 'Bob', x: 60, y: 60, color: '#777', online: true }] })}/>);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Message Your People At Burning Man Without Cell Service');
     const map = within(screen.getByRole('img', { name: 'Mesh network topology' }));
     for (const label of ['Malcome · Deep playa', 'Basith · Playa airport', 'Lucas · Relay', 'Shravanthi · Relay']) {
       expect(map.getByText(label, { selector: 'text' })).toBeInTheDocument();
