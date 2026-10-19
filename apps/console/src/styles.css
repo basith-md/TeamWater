@@ -97,3 +97,21 @@ main{padding-top:14px}
 
 /* Phone width: the top bar keeps its demo controls as icon-only buttons (labels stay in aria-label). */
 @media(max-width:620px){.topbar-right{gap:8px;min-width:0}.topbar-right .connection{font-size:0;gap:0}.reset-demo-button{font-size:0;gap:0;padding:7px}}
+/* Wake screen: shown while the hosted simulator starts */
+.wake-screen{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;padding:16px;background:#f4f3edf2;backdrop-filter:blur(6px);transition:opacity .6s ease}.wake-screen.done{opacity:0;pointer-events:none}
+.wake-card{width:100%;max-width:440px;background:#fafaf5;border:1px solid var(--line);border-radius:12px;padding:28px 28px 22px;box-shadow:0 20px 70px #19251e1f;text-align:center}
+.wake-brand{display:flex;align-items:center;justify-content:center;gap:8px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;letter-spacing:-1px;color:var(--ink)}.wake-brand svg{color:var(--orange)}
+.wake-mesh{display:block;width:100%;max-width:300px;margin:22px auto 8px;overflow:visible}
+.wake-link{stroke:#c4cbb7;stroke-width:1.6;stroke-dasharray:4 4;animation:wake-flow 1.2s linear infinite}
+.wake-node{fill:#637154;stroke:#fafaf5;stroke-width:2.5}.wake-node.endpoint{fill:var(--orange)}
+.wake-hop{animation:wake-blink 1.75s ease-in-out infinite}
+.wake-ring{fill:none;stroke:var(--orange);stroke-width:1.5;transform-box:fill-box;transform-origin:center;opacity:0;animation:wake-ring 1.75s ease-out infinite}
+.wake-card h2{font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:22px;letter-spacing:-.7px;margin:10px 0 8px;color:var(--ink)}
+.wake-card p{font-size:12px;line-height:1.6;color:#7d896d;margin:0 auto 18px;max-width:340px;min-height:38px}
+.wake-progress{height:6px;border-radius:6px;background:#e6e8dc;overflow:hidden}.wake-progress i{display:block;height:100%;border-radius:6px;background:var(--orange);transition:width .5s ease}
+.wake-meta{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:10px;font-family:var(--mono);font-size:10px;color:#9aa38c;min-height:20px}
+.wake-meta button{background:none;border:0;padding:2px 0;font-family:'DM Sans',sans-serif;font-size:11px;color:#a45d3a;text-decoration:underline}
+@keyframes wake-flow{to{stroke-dashoffset:-16}}
+@keyframes wake-blink{0%,100%{opacity:.55}25%{opacity:1}}
+@keyframes wake-ring{0%{opacity:.8;transform:scale(1)}70%,100%{opacity:0;transform:scale(2.6)}}
+@media(prefers-reduced-motion:reduce){.wake-link,.wake-hop,.wake-ring{animation:none}.wake-ring{display:none}.wake-progress i{transition:none}}

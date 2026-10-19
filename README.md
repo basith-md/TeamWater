@@ -8,19 +8,11 @@ The demo runs locally. The former shared preview is retired. Expo source remains
 
 Use Python 3.11+ and Node.js 22.22+. From the repository root:
 
-<<<<<<< HEAD
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 npm ci
 ```
-=======
-## Shippable phone module
-
-[`shippable/`](shippable/) holds the code meant for real phones: [`shippable/water-ai`](shippable/water-ai/) is the phone side of Water AI (setup, sealed questions over the mesh, gateway relay), byte-compatible with Water Connect in [`connect/`](connect/). Start with [`shippable/README.md`](shippable/README.md).
-
-## Shared Types (OpenAPI)
->>>>>>> e821229e9e2cabe0b87d26c2919af8dccc91de3e
 
 Start the recording backend in one terminal:
 
@@ -33,6 +25,8 @@ Start the console in another:
 ```sh
 TEAMWATER_BACKEND_URL=http://127.0.0.1:8003 npm run dev -- --port 5173 --strictPort
 ```
+
+On Windows, npm drops the `--port` flag; run Vite directly from `apps/console` instead: `TEAMWATER_BACKEND_URL=http://127.0.0.1:8003 ../../node_modules/.bin/vite --port 5173 --strictPort`, and use `.venv/Scripts/python` in place of `.venv/bin/python`.
 
 Open http://localhost:5173. **Play demo** clears the conversation, types the invitation and reply character by character, and waits for verified delivery. **Reset demo** clears phones, transfers, and the ledger while preserving node positions and radio settings. Stop each process with Ctrl+C when finished.
 
@@ -58,6 +52,19 @@ The first value is the session secret; the second is the master key. Keep the ma
 Relay API responses contain sealed answers and non-plaintext metadata. Water Connect decrypts requests to call the provider, and authorized group members can view questions and answers in its trust log. Configured PRISM tracing also receives that content. The local simulator holds every simulated device's state and keys; it is not a security boundary between real phones. Reset cancels the local AI workflow but cannot undo a provider call that has already started.
 
 Grounded replies include field-guide sources; uncovered questions may receive a labeled general answer when `REQUIRE_GROUNDING=0`. Set it to `1` for field-guide-only replies. Budgets count actual provider calls, including a fallback call. Retries reuse request IDs to retrieve cached answers. To publish local reference facts to a configured PRISM knowledge base, run `.venv/bin/python -m connect.kb_sync`. This replaces matching field-guide documents; removing a local fact does not automatically delete its remote copy.
+
+## Hosted demo
+
+The console can be hosted separately from the simulator, for example the console on Vercel and the backend on Render (see [`render.yaml`](render.yaml) and [RENDER.md](RENDER.md)).
+
+- **Console:** build `apps/console` with `VITE_BACKEND_URL` set to the backend's public URL, such as `https://your-service.onrender.com`. Without it, the console uses the local `/api` proxy.
+- **Backend:** set `CORS_ORIGINS` to the console's origin, such as `https://your-console.vercel.app`. Separate multiple origins with commas. Unset, the service stays same-origin only.
+
+Free hosts sleep when idle and take 30–60 seconds to wake. While the backend is unreachable, the console shows a wake screen with a progress bar. It keeps pinging the backend and connects as soon as it answers.
+
+## Shippable phone module
+
+[`shippable/`](shippable/) holds the code meant for real phones: [`shippable/water-ai`](shippable/water-ai/) is the phone side of Water AI (setup, sealed questions over the mesh, gateway relay), byte-compatible with Water Connect in [`connect/`](connect/). Start with [`shippable/README.md`](shippable/README.md).
 
 ## Repository and shared contracts
 

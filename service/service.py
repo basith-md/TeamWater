@@ -49,6 +49,14 @@ except ImportError:
     from ai_gateway import AiGateway
 
 app = FastAPI(title="CHRP Mesh Service")
+
+# A console hosted on another origin (e.g. Vercel) needs CORS for its HTTP calls.
+# Comma-separated list; unset keeps the service same-origin only.
+_cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    from fastapi.middleware.cors import CORSMiddleware
+
+    app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_methods=["*"], allow_headers=["*"])
 backend = MeshBackend(playback_speed=float(os.environ.get("TEAMWATER_PLAYBACK_SPEED", "2")), diverse_routes=True)
 
 # Water Connect runs in this process under /connect; with WATER_DEMO=1 every node's phone is

@@ -9,6 +9,7 @@ import { VerifiedAudio } from './VerifiedAudio';
 import { liveTransmission, useTracePlayback } from './useTracePlayback';
 import { VoiceRecorder } from './VoiceRecorder';
 import { useDemoPlayback } from './useDemoPlayback';
+import { WakeScreen } from './WakeScreen';
 import './styles.css';
 
 const eventLabels: Record<MeshEvent['kind'], string> = {
@@ -336,6 +337,7 @@ export function App({ client }: { client: MeshClient }) {
       </div>
       <footer className="page-footer"><span><Waves size={14}/> Water Connect mesh simulator</span><span>Water Connect</span></footer>
     </main>
-    {settingsOpen && <div className="dialog-backdrop"><section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div className="dialog-heading"><h2 id="settings-title">Connection settings</h2><button className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X size={18}/></button></div><p>Use the local proxy or enter your simulator service URL.</p><form onSubmit={event => { event.preventDefault(); client.setMode('live', endpoint.trim() || '/api'); setSelectedId(null); setSettingsOpen(false); }}><label htmlFor="endpoint">Backend URL</label><input id="endpoint" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder="/api"/><p className="settings-hint">/api uses the configured local simulator proxy.</p><button className="apply-button" type="submit">Connect to live backend<ArrowUpRight size={15}/></button></form></section></div>}
+    <WakeScreen client={client} state={state}/>
+    {settingsOpen &&<div className="dialog-backdrop"><section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div className="dialog-heading"><h2 id="settings-title">Connection settings</h2><button className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X size={18}/></button></div><p>Use the local proxy or enter your simulator service URL.</p><form onSubmit={event => { event.preventDefault(); client.setMode('live', endpoint.trim() || '/api'); setSelectedId(null); setSettingsOpen(false); }}><label htmlFor="endpoint">Backend URL</label><input id="endpoint" value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder="/api"/><p className="settings-hint">/api uses the configured local simulator proxy.</p><button className="apply-button" type="submit">Connect to live backend<ArrowUpRight size={15}/></button></form></section></div>}
   </div>;
 }
