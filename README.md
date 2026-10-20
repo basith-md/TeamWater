@@ -1,5 +1,7 @@
 # Water Connect
 
+**Live demo:** [water-connect-nu.vercel.app](https://water-connect-nu.vercel.app)
+
 A local mesh-network simulator, React phone UI, packet console, and optional AI gateway. The recording demo follows Malcome inviting Basith from the playa airport to Mayan Warrior in deep playa. Six simulated nodes run in one Python process; messages cross at least four radio hops in the recording topology.
 
 The demo runs locally. The former shared preview is retired. Expo source remains in the repository but is not needed for the browser demo.
